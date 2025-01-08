@@ -92,16 +92,16 @@ impl ToString for TokenType {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Literal {
+pub enum LiteralType {
     StringLiteral(String),
     FloatLiteral(f64),
 }
 
-impl ToString for Literal {
+impl ToString for LiteralType {
     fn to_string(&self) -> String {
         match self {
-            Literal::StringLiteral(l) => String::from(l),
-            Literal::FloatLiteral(l) => l.to_string(),
+            LiteralType::StringLiteral(l) => String::from(l),
+            LiteralType::FloatLiteral(l) => l.to_string(),
         }
     }
 }
@@ -111,7 +111,16 @@ pub enum Token {
     // token_type, lexeme, line
     Simple(TokenType, String, usize),
     // token_type, lexeme, literal, line
-    Literal(TokenType, String, Literal, usize),
+    Literal(TokenType, String, LiteralType, usize),
+}
+
+impl Token {
+    pub fn get_lexeme(&self) -> String {
+        match self {
+            Token::Simple(_, lexeme, _) => (*lexeme).to_string(),
+            Token::Literal(_, lexeme, _, _) => (*lexeme).to_string(),
+        }
+    }
 }
 
 impl ToString for Token {
