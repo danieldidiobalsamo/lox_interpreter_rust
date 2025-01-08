@@ -3,6 +3,8 @@ use std::error::Error;
 use std::fs;
 use std::io::{stdin, stdout, Write};
 
+pub mod ast_printer;
+pub mod expr;
 pub mod scanner;
 pub mod token;
 

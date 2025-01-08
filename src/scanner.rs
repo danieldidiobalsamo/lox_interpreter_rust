@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     build_error_message,
-    token::{Literal, Token, TokenType},
+    token::{LiteralType, Token, TokenType},
 };
 
 pub struct Scanner<'a> {
@@ -144,7 +144,7 @@ impl<'a> Scanner<'a> {
 
                     self.add_token_literal(
                         TokenType::String,
-                        Literal::StringLiteral(literal.to_string()),
+                        LiteralType::StringLiteral(literal.to_string()),
                     );
                 }
             }
@@ -167,7 +167,7 @@ impl<'a> Scanner<'a> {
                     .parse::<f64>()
                     .unwrap();
 
-                self.add_token_literal(TokenType::Number, Literal::FloatLiteral(literal));
+                self.add_token_literal(TokenType::Number, LiteralType::FloatLiteral(literal));
             }
 
             x if x.is_alphabetic() => {
@@ -209,7 +209,7 @@ impl<'a> Scanner<'a> {
             .push(Token::Simple(token_type, text.to_owned(), self.line));
     }
 
-    fn add_token_literal(&mut self, token_type: TokenType, literal: Literal) {
+    fn add_token_literal(&mut self, token_type: TokenType, literal: LiteralType) {
         let text = &self.source[self.start_lexeme..=self.current];
 
         self.tokens.push(Token::Literal(
@@ -390,7 +390,7 @@ mod tests {
             Token::Literal(
                 TokenType::String,
                 String::from("\"hello world\""),
-                Literal::StringLiteral(String::from("hello world")),
+                LiteralType::StringLiteral(String::from("hello world")),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -408,13 +408,13 @@ mod tests {
             Token::Literal(
                 TokenType::String,
                 String::from("\"hello world\""),
-                Literal::StringLiteral(String::from("hello world")),
+                LiteralType::StringLiteral(String::from("hello world")),
                 1,
             ),
             Token::Literal(
                 TokenType::String,
                 String::from("\"test\""),
-                Literal::StringLiteral(String::from("test")),
+                LiteralType::StringLiteral(String::from("test")),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -432,7 +432,7 @@ mod tests {
             Token::Literal(
                 TokenType::String,
                 String::from("\"hello\nworld\""),
-                Literal::StringLiteral(String::from("hello\nworld")),
+                LiteralType::StringLiteral(String::from("hello\nworld")),
                 2,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 2),
@@ -467,7 +467,7 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("5"),
-                Literal::FloatLiteral(5.0),
+                LiteralType::FloatLiteral(5.0),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -485,7 +485,7 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("3.14"),
-                Literal::FloatLiteral(3.14),
+                LiteralType::FloatLiteral(3.14),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -503,14 +503,14 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("2.2"),
-                Literal::FloatLiteral(2.2),
+                LiteralType::FloatLiteral(2.2),
                 1,
             ),
             Token::Simple(TokenType::Plus, String::from("+"), 1),
             Token::Literal(
                 TokenType::Number,
                 String::from("5.1"),
-                Literal::FloatLiteral(5.1),
+                LiteralType::FloatLiteral(5.1),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -529,7 +529,7 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("5.3"),
-                Literal::FloatLiteral(5.3),
+                LiteralType::FloatLiteral(5.3),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -610,14 +610,14 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("2"),
-                Literal::FloatLiteral(2.),
+                LiteralType::FloatLiteral(2.),
                 5,
             ),
             Token::Simple(TokenType::Comma, String::from(","), 5),
             Token::Literal(
                 TokenType::Number,
                 String::from("2"),
-                Literal::FloatLiteral(2.),
+                LiteralType::FloatLiteral(2.),
                 5,
             ),
             Token::Simple(TokenType::RightParen, String::from(")"), 5),
