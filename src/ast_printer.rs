@@ -1,6 +1,6 @@
 use crate::expr::{self, AstVisitor, Expr};
 
-struct AstPrinter;
+pub struct AstPrinter;
 
 impl AstPrinter {
     pub fn print(&mut self, expr: Expr) -> String {

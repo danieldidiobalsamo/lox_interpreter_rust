@@ -1,6 +1,6 @@
 use crate::token::{LiteralType, Token};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(Literal),
     Binary(Binary),
@@ -26,24 +26,24 @@ pub trait AstVisitor<T> {
     fn visit_unary_expr(&mut self, expr: &Unary) -> T;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Literal {
     pub value: LiteralType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Binary {
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Grouping {
     pub expression: Box<Expr>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Unary {
     pub operator: Token,
     pub right: Box<Expr>,

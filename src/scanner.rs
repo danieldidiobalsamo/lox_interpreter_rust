@@ -49,7 +49,7 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<&[Token], &str> {
+    pub fn scan_tokens(&mut self) -> Result<Vec<Token>, &str> {
         // if scan_tokens() has already been called
         if !self.tokens.is_empty() || !self.error_log.is_empty() {
             return self.get_scan_results();
@@ -194,9 +194,9 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn get_scan_results(&self) -> Result<&[Token], &str> {
+    fn get_scan_results(&self) -> Result<Vec<Token>, &str> {
         if self.error_log.is_empty() {
-            Ok(&self.tokens)
+            Ok(self.tokens.clone())
         } else {
             Err(&self.error_log)
         }
