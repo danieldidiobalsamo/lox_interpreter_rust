@@ -5,8 +5,12 @@ use std::io::{stdin, stdout, Write};
 
 pub mod ast_printer;
 pub mod expr;
+pub mod parser;
 pub mod scanner;
 pub mod token;
+
+use ast_printer::AstPrinter;
+use parser::Parser;
 
 use crate::scanner::Scanner;
 
@@ -63,8 +67,13 @@ fn run(source: &str) {
     match scanner.scan_tokens() {
         Err(err) => eprintln!("{err}"),
         Ok(tokens) => {
-            for token in tokens {
-                println!("{}", token.to_string());
+            let mut parser = Parser::new(tokens);
+            match parser.parse() {
+                Ok(expr) => {
+                    let mut printer = AstPrinter;
+                    println!("{}", printer.print(expr));
+                }
+                Err(err) => eprintln!("{err}"),
             }
         }
     };
