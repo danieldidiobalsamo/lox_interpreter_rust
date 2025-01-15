@@ -236,6 +236,20 @@ mod tests {
     }
 
     #[test]
+    fn unary_minus() {
+        let mut parser = Parser::new(get_tokens("-2"));
+
+        let expected = Expr::Unary(Unary {
+            operator: Token::Simple(TokenType::Minus, "-".to_string(), 1),
+            right: Box::new(Expr::Literal(Literal {
+                value: LiteralType::FloatLiteral(2.),
+            })),
+        });
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
     fn simple_add() {
         let mut parser = Parser::new(get_tokens("2+2"));
 

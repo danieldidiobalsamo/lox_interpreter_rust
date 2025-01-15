@@ -95,8 +95,26 @@ impl ToString for TokenType {
 pub enum LiteralType {
     StringLiteral(String),
     FloatLiteral(f64),
-    BoolLiteral(bool),
+    BoolLiteral(bool), // in lox, "nil" and "false" are false, everything else is true
     NilLiteral,
+}
+
+impl LiteralType {
+    pub fn get_float(&self) -> Result<f64, String> {
+        if let LiteralType::FloatLiteral(v) = self {
+            return Ok(*v);
+        }
+
+        Err("Not a float literal".to_owned())
+    }
+
+    pub fn get_string(&self) -> Result<String, String> {
+        if let LiteralType::StringLiteral(s) = self {
+            return Ok(s.to_string());
+        }
+
+        Err("Not a string literal".to_owned())
+    }
 }
 
 impl ToString for LiteralType {

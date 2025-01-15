@@ -1,15 +1,17 @@
-use std::env;
 use std::error::Error;
 use std::fs;
 use std::io::{stdin, stdout, Write};
+use std::{env, process};
 
 pub mod ast_printer;
 pub mod expr;
+pub mod interpreter;
 pub mod parser;
 pub mod scanner;
 pub mod token;
 
 use ast_printer::AstPrinter;
+use interpreter::Interpreter;
 use parser::Parser;
 
 use crate::scanner::Scanner;
@@ -70,10 +72,20 @@ fn run(source: &str) {
             let mut parser = Parser::new(tokens);
             match parser.parse() {
                 Ok(expr) => {
-                    let mut printer = AstPrinter;
-                    println!("{}", printer.print(expr));
+                    let mut interpreter = Interpreter;
+
+                    match interpreter.interpret(&expr) {
+                        Ok(v) => println!("{}", v.to_string()),
+                        Err(err) => {
+                            eprintln!("{err}");
+                            process::exit(70); // C sysexits.h EX_SOFTWARE internal software error
+                        }
+                    }
                 }
-                Err(err) => eprintln!("{err}"),
+                Err(err) => {
+                    eprintln!("{err}");
+                    process::exit(65); // C sysexits.h EX_DATAERR data format error
+                }
             }
         }
     };
