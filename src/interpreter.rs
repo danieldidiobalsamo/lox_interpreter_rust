@@ -1,11 +1,35 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+
 use crate::expr::{AstVisitor, Expr};
+use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
-pub struct Interpreter;
+pub struct Interpreter {
+    pub write_log: bool,
+    log_file: String,
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self {
+            write_log: false,
+            log_file: "unit_tests.log".to_owned(),
+        }
+    }
+}
 
 impl Interpreter {
-    pub fn interpret(&mut self, expr: &Expr) -> Result<LiteralType, String> {
-        self.evaluate(expr)
+    pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
+        for statement in statements {
+            self.execute(&statement)?;
+        }
+
+        Ok(())
+    }
+
+    fn execute(&mut self, statement: &Stmt) -> Result<(), String> {
+        statement.accept(self)
     }
 
     fn evaluate(&mut self, expr: &Expr) -> Result<LiteralType, String> {
@@ -135,33 +159,99 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     }
 }
 
+impl StmtVisitor<Result<(), String>> for Interpreter {
+    fn visit_expression(&mut self, expr: &crate::stmt::Expression) -> Result<(), String> {
+        self.evaluate(&expr.expression)?;
+
+        Ok(())
+    }
+
+    fn visit_print(&mut self, expr: &crate::stmt::Print) -> Result<(), String> {
+        let value = self.evaluate(&expr.expression)?;
+        println!("{}", value.to_string());
+
+        if self.write_log {
+            let mut file = OpenOptions::new()
+                .append(true)
+                .open(&self.log_file)
+                .unwrap();
+            file.write((value.to_string() + "\n").as_bytes()).unwrap();
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::{
+        fs::{self, File},
+        path::Path,
+    };
+
     use super::*;
 
     use crate::parser::Parser;
     use crate::scanner::Scanner;
 
-    use super::*;
+    struct Setup {
+        id: usize,
+    }
+    use std::sync::{Mutex, OnceLock};
 
-    fn get_expr(code: &str) -> Expr {
-        let mut scanner = Scanner::new(code);
-        let tokens = scanner.scan_tokens().unwrap();
+    impl Setup {
+        pub fn new() -> &'static Mutex<Self> {
+            static SETUP: OnceLock<Mutex<Setup>> = OnceLock::new();
+            SETUP.get_or_init(|| Mutex::new(Setup { id: 0 }))
+        }
 
-        let mut parser = Parser::new(tokens);
-        parser.parse().unwrap()
+        pub fn id(&mut self) -> usize {
+            self.id += 1;
+            self.id
+        }
+
+        fn get_statements(&self, code: &str) -> Vec<Stmt> {
+            let mut scanner = Scanner::new(code);
+            let tokens = scanner.scan_tokens().unwrap();
+
+            let mut parser = Parser::new(tokens);
+            parser.parse().unwrap()
+        }
+
+        fn interpret_code(&mut self, code: &str) -> Result<String, String> {
+            let dir = String::from("unit_tests_tmp_logs");
+            if !Path::new(&dir).exists() {
+                fs::create_dir(&dir).unwrap();
+            }
+
+            let name = format!("{}/unit_tests_{}.log", dir, self.id());
+            let mut i = Interpreter {
+                write_log: true,
+                log_file: name.clone(),
+            };
+
+            let _ = File::create(&name).unwrap();
+
+            let statements = self.get_statements(code);
+            i.interpret(&statements)?;
+
+            Ok(name)
+        }
     }
 
-    fn interpret_code(code: &str) -> Result<LiteralType, String> {
-        let mut i = Interpreter;
-        let expr = get_expr(code);
-
-        i.interpret(&expr)
+    pub fn check_results(log_filename: &str, expected: &[&str]) {
+        for (i, line) in fs::read_to_string(&log_filename)
+            .unwrap()
+            .lines()
+            .enumerate()
+        {
+            assert_eq!(line, expected[i]);
+        }
     }
 
     #[test]
     fn is_truthy() {
-        let i = Interpreter;
+        let i = Interpreter::default();
         assert_eq!(i.is_truthy(&LiteralType::NilLiteral), false);
         assert_eq!(i.is_truthy(&LiteralType::FloatLiteral(5.0)), true);
         assert_eq!(
@@ -174,246 +264,275 @@ mod tests {
 
     #[test]
     fn bang() {
-        assert_eq!(
-            interpret_code("!true").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("!false").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print !true;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
 
-        assert_eq!(
-            interpret_code("!!true").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("!false;").unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert_eq!(
-            interpret_code("!nil").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("!!true;").unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert_eq!(
-            interpret_code("!5.0").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("!nil;").unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert_eq!(
-            interpret_code("!\"abc\"").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("!5.0;").unwrap();
+        check_results(&file_name, &vec!["false"]);
+
+        let file_name = setup.lock().unwrap().interpret_code("!\"abc\";").unwrap();
+        check_results(&file_name, &vec!["false"]);
     }
 
     #[test]
     fn unary_minus() {
-        assert_eq!(
-            interpret_code("-2").unwrap(),
-            LiteralType::FloatLiteral(-2.)
-        );
-        assert_eq!(
-            interpret_code("--2").unwrap(),
-            LiteralType::FloatLiteral(2.)
-        );
-        assert_eq!(
-            interpret_code("---2").unwrap(),
-            LiteralType::FloatLiteral(-2.)
-        );
+        let setup = Setup::new();
+
+        let file_name = setup.lock().unwrap().interpret_code("print -2;").unwrap();
+        check_results(&file_name, &vec!["-2"]);
+
+        let file_name = setup.lock().unwrap().interpret_code("print --2;").unwrap();
+        check_results(&file_name, &vec!["2"]);
+
+        let file_name = setup.lock().unwrap().interpret_code("print ---2;").unwrap();
+        check_results(&file_name, &vec!["-2"]);
     }
 
     #[test]
     fn binary_minus() {
-        assert_eq!(
-            interpret_code("2-2").unwrap(),
-            LiteralType::FloatLiteral(0.)
-        );
-        assert_eq!(
-            interpret_code("-2-2").unwrap(),
-            LiteralType::FloatLiteral(-4.)
-        );
+        let setup = Setup::new();
+
+        let file_name = setup.lock().unwrap().interpret_code("print 2-2;").unwrap();
+        check_results(&file_name, &vec!["0"]);
+
+        let file_name = setup.lock().unwrap().interpret_code("print -2-2;").unwrap();
+        check_results(&file_name, &vec!["-4"]);
     }
 
     #[test]
     fn grouping() {
-        assert_eq!(
-            interpret_code("-(-2-2)-(1*2)").unwrap(),
-            LiteralType::FloatLiteral(2.)
-        );
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print -(-2-2)-(1*2);")
+            .unwrap();
+        check_results(&file_name, &vec!["2"]);
     }
 
     #[test]
     fn slash() {
-        assert_eq!(
-            interpret_code("2/2").unwrap(),
-            LiteralType::FloatLiteral(1.)
-        );
+        let setup = Setup::new();
+
+        let file_name = setup.lock().unwrap().interpret_code("print 2/2;").unwrap();
+        check_results(&file_name, &vec!["1"]);
+
+        let file_name = setup.lock().unwrap().interpret_code("print 1/2;").unwrap();
+        check_results(&file_name, &vec!["0.5"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 10.5/2;")
+            .unwrap();
+        check_results(&file_name, &vec!["5.25"]);
 
         assert_eq!(
-            interpret_code("1/2").unwrap(),
-            LiteralType::FloatLiteral(0.5)
+            setup.lock().unwrap().interpret_code("2.5/0;"),
+            Err("Can't divide by 0".to_owned())
         );
-
-        assert_eq!(
-            interpret_code("10.5/2").unwrap(),
-            LiteralType::FloatLiteral(5.25)
-        );
-
-        assert_eq!(interpret_code("2.5/0"), Err("Can't divide by 0".to_owned()));
     }
 
     #[test]
     fn star() {
-        assert_eq!(
-            interpret_code("2*2").unwrap(),
-            LiteralType::FloatLiteral(4.)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("0.5*2").unwrap(),
-            LiteralType::FloatLiteral(1.)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 2*2;").unwrap();
+        check_results(&file_name, &vec!["4"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 0.5*2;")
+            .unwrap();
+        check_results(&file_name, &vec!["1"]);
     }
 
     #[test]
     fn binary_plus() {
-        assert_eq!(
-            interpret_code("2+2").unwrap(),
-            LiteralType::FloatLiteral(4.)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("\"Hello \"+\"world\"+\"!\"").unwrap(),
-            LiteralType::StringLiteral("Hello world!".to_owned())
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 2+2;").unwrap();
+        check_results(&file_name, &vec!["4"]);
 
-        assert!(interpret_code("true + false").is_err(),);
-        assert!(interpret_code("true + 1").is_err(),);
-        assert!(interpret_code("true + \"abc\"").is_err(),);
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print \"Hello \"+\"world\"+\"!\";")
+            .unwrap();
+        check_results(&file_name, &vec!["Hello world!"]);
+
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("print true + false;")
+            .is_err());
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("print true + 1;")
+            .is_err());
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 1 + \"abc\";")
+            .is_err());
     }
 
     #[test]
     fn greater() {
-        assert_eq!(
-            interpret_code("2>2").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("3>2").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 2>2;").unwrap();
+        check_results(&file_name, &vec!["false"]);
 
-        assert_eq!(
-            interpret_code("2>3").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 3>2;").unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert!(interpret_code("false>2").is_err());
+        let file_name = setup.lock().unwrap().interpret_code("print 2>3;").unwrap();
+        check_results(&file_name, &vec!["false"]);
+
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("print false>2;")
+            .is_err());
     }
 
     #[test]
     fn greater_equal() {
-        assert_eq!(
-            interpret_code("2>=2").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("3>=2").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 2>=2;").unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert_eq!(
-            interpret_code("2>=3").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 3>=2;").unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert!(interpret_code("false>2").is_err());
+        let file_name = setup.lock().unwrap().interpret_code("print 2>=3;").unwrap();
+        check_results(&file_name, &vec!["false"]);
+
+        assert!(setup.lock().unwrap().interpret_code("false>=2;").is_err());
     }
 
     #[test]
     fn less() {
-        assert_eq!(
-            interpret_code("2<2").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("3<2").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 2<2;").unwrap();
+        check_results(&file_name, &vec!["false"]);
 
-        assert_eq!(
-            interpret_code("2<3").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 3<2;").unwrap();
+        check_results(&file_name, &vec!["false"]);
 
-        assert!(interpret_code("false<2").is_err());
+        let file_name = setup.lock().unwrap().interpret_code("print 2<3;").unwrap();
+        check_results(&file_name, &vec!["true"]);
+
+        assert!(setup.lock().unwrap().interpret_code("false<2;").is_err());
     }
 
     #[test]
     fn less_equal() {
-        assert_eq!(
-            interpret_code("2<=2").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("3<=2").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 2<=2;").unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert_eq!(
-            interpret_code("2<=3").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup.lock().unwrap().interpret_code("print 3<=2;").unwrap();
+        check_results(&file_name, &vec!["false"]);
 
-        assert!(interpret_code("false<=2").is_err());
+        let file_name = setup.lock().unwrap().interpret_code("print 2<=3;").unwrap();
+        check_results(&file_name, &vec!["true"]);
+
+        assert!(setup.lock().unwrap().interpret_code("false<=2;").is_err());
     }
 
     #[test]
     fn equalequal() {
-        assert_eq!(
-            interpret_code("2 == 2").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("\"2\" == 2").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 2 == 2;")
+            .unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert_eq!(
-            interpret_code("2 == false").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print \"2\" == 2;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
 
-        assert_eq!(
-            interpret_code("false == false").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 2 == false;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print false == false;")
+            .unwrap();
+        check_results(&file_name, &vec!["true"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 2 == 2 == 3;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
     }
 
     #[test]
     fn bang_equal() {
-        assert_eq!(
-            interpret_code("2 != 2").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let setup = Setup::new();
 
-        assert_eq!(
-            interpret_code("\"2\" != 2").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 2 != 2;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
 
-        assert_eq!(
-            interpret_code("2 != false").unwrap(),
-            LiteralType::BoolLiteral(true)
-        );
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print \"2\" != 2;")
+            .unwrap();
+        check_results(&file_name, &vec!["true"]);
 
-        assert_eq!(
-            interpret_code("false != false").unwrap(),
-            LiteralType::BoolLiteral(false)
-        );
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print 2 != false;")
+            .unwrap();
+        check_results(&file_name, &vec!["true"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print false != false;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
     }
 }

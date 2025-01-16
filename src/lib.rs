@@ -8,6 +8,7 @@ pub mod expr;
 pub mod interpreter;
 pub mod parser;
 pub mod scanner;
+pub mod stmt;
 pub mod token;
 
 use ast_printer::AstPrinter;
@@ -71,11 +72,11 @@ fn run(source: &str) {
         Ok(tokens) => {
             let mut parser = Parser::new(tokens);
             match parser.parse() {
-                Ok(expr) => {
-                    let mut interpreter = Interpreter;
+                Ok(statements) => {
+                    let mut interpreter = Interpreter::default();
 
-                    match interpreter.interpret(&expr) {
-                        Ok(v) => println!("{}", v.to_string()),
+                    match interpreter.interpret(&statements) {
+                        Ok(_) => (),
                         Err(err) => {
                             eprintln!("{err}");
                             process::exit(70); // C sysexits.h EX_SOFTWARE internal software error

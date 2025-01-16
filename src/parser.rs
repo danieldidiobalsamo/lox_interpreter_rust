@@ -1,5 +1,6 @@
 use crate::{
     expr::{Binary, Expr, Grouping, Literal, Unary},
+    stmt::{Expression, Print, Stmt},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -13,8 +14,40 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<Expr, String> {
-        self.expression()
+    pub fn parse(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut statements = Vec::new();
+
+        while !self.is_at_end() {
+            statements.push(self.statement()?);
+        }
+
+        Ok(statements)
+    }
+
+    fn statement(&mut self) -> Result<Stmt, String> {
+        if self.match_token_type(&[TokenType::Print]) {
+            return self.print_statement();
+        }
+
+        self.expression_statement()
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt, String> {
+        let val = self.expression()?;
+        let _ = self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+
+        return Ok(Stmt::Print(Print {
+            expression: Box::new(val),
+        }));
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt, String> {
+        let expr = self.expression()?;
+        let _ = self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+
+        return Ok(Stmt::Expression(Expression {
+            expression: Box::new(expr),
+        }));
     }
 
     fn expression(&mut self) -> Result<Expr, String> {
@@ -180,7 +213,7 @@ impl Parser {
     }
 
     fn is_at_end(&self) -> bool {
-        self.current == self.tokens.len()
+        *self.peek().get_type() == TokenType::Eof
     }
 
     fn advance(&mut self) -> &Token {
@@ -237,80 +270,88 @@ mod tests {
 
     #[test]
     fn unary_minus() {
-        let mut parser = Parser::new(get_tokens("-2"));
+        let mut parser = Parser::new(get_tokens("-2;"));
 
-        let expected = Expr::Unary(Unary {
-            operator: Token::Simple(TokenType::Minus, "-".to_string(), 1),
-            right: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(2.),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Unary(Unary {
+                operator: Token::Simple(TokenType::Minus, "-".to_string(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(2.),
+                })),
             })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn simple_add() {
-        let mut parser = Parser::new(get_tokens("2+2"));
+        let mut parser = Parser::new(get_tokens("2+2;"));
 
-        let expected = Expr::Binary(Binary {
-            left: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(2.),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Binary(Binary {
+                left: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(2.),
+                })),
+                operator: Token::Simple(TokenType::Plus, "+".to_string(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(2.),
+                })),
             })),
-            operator: Token::Simple(TokenType::Plus, "+".to_string(), 1),
-            right: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(2.),
-            })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn equality() {
-        let mut parser = Parser::new(get_tokens("1 == 2 == 3"));
+        let mut parser = Parser::new(get_tokens("1 == 2 == 3;"));
 
-        let expected = Expr::Binary(Binary {
-            operator: Token::Simple(TokenType::EqualEqual, "==".to_string(), 1),
-            left: Box::new(Expr::Binary(Binary {
-                left: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(1.),
-                })),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Binary(Binary {
                 operator: Token::Simple(TokenType::EqualEqual, "==".to_string(), 1),
+                left: Box::new(Expr::Binary(Binary {
+                    left: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(1.),
+                    })),
+                    operator: Token::Simple(TokenType::EqualEqual, "==".to_string(), 1),
+                    right: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    })),
+                })),
                 right: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(2.),
+                    value: LiteralType::FloatLiteral(3.),
                 })),
             })),
-            right: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(3.),
-            })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn grouping() {
-        let mut parser = Parser::new(get_tokens("(2*2)"));
+        let mut parser = Parser::new(get_tokens("(2*2);"));
 
-        let expected = Expr::Grouping(Grouping {
-            expression: Box::new(Expr::Binary(Binary {
-                left: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(2.),
-                })),
-                operator: Token::Simple(TokenType::Star, "*".to_string(), 1),
-                right: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(2.),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Grouping(Grouping {
+                expression: Box::new(Expr::Binary(Binary {
+                    left: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    })),
+                    operator: Token::Simple(TokenType::Star, "*".to_string(), 1),
+                    right: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    })),
                 })),
             })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn incomplete_binary() {
-        let mut parser = Parser::new(get_tokens("2+"));
+        let mut parser = Parser::new(get_tokens("2+;"));
         assert!(parser.parse().is_err());
     }
 }
