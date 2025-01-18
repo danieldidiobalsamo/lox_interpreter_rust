@@ -20,4 +20,16 @@ impl Environment {
             None => Err(format!("Undefined variable: '{var_name}'.")),
         }
     }
+
+    pub fn assign(&mut self, name: &Token, value: &LiteralType) -> Result<(), String> {
+        let var_name = name.get_lexeme();
+
+        match self.values.get(&var_name) {
+            Some(_) => {
+                *self.values.get_mut(&var_name).unwrap() = value.clone();
+                Ok(())
+            }
+            None => Err(format!("Undefined variable: '{var_name}'.")),
+        }
+    }
 }

@@ -164,6 +164,13 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     fn visit_variable_expr(&mut self, expr: &Variable) -> Result<LiteralType, String> {
         return self.env.get(&expr.name);
     }
+
+    fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<LiteralType, String> {
+        let value = self.evaluate(&expr.value)?;
+        self.env.assign(&expr.name, &value)?;
+
+        Ok(value)
+    }
 }
 
 impl StmtVisitor<Result<(), String>> for Interpreter {
@@ -572,5 +579,31 @@ mod tests {
             .interpret_code("var a; print a;")
             .unwrap();
         check_results(&file_name, &vec!["nil"]);
+    }
+
+    #[test]
+    fn assignment() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1; var b=a;print a+b;")
+            .unwrap();
+        check_results(&file_name, &vec!["2"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=\"a\"; var b=\"b\"; var c=a+b; print c;")
+            .unwrap();
+        check_results(&file_name, &vec!["ab"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=0; var b=1; var c = a = b; print c;")
+            .unwrap();
+        check_results(&file_name, &vec!["1"]);
     }
 }

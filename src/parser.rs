@@ -1,5 +1,5 @@
 use crate::{
-    expr::{Binary, Expr, Grouping, Literal, Unary, Variable},
+    expr::{Assign, Binary, Expr, Grouping, Literal, Unary, Variable},
     stmt::{Expression, Print, Stmt, Var},
     token::{LiteralType, Token, TokenType},
 };
@@ -91,7 +91,26 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<Expr, String> {
-        self.equality()
+        self.assigment()
+    }
+
+    fn assigment(&mut self) -> Result<Expr, String> {
+        let expr = self.equality()?;
+
+        if self.match_token_type(&[TokenType::Equal]) {
+            let value = self.assigment()?;
+
+            if let Expr::Variable(var) = expr {
+                return Ok(Expr::Assign(Assign {
+                    name: var.name,
+                    value: Box::new(value),
+                }));
+            } else {
+                return Err("Invalid assignment target.".to_owned());
+            }
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expr, String> {
@@ -423,6 +442,28 @@ mod tests {
             name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
             initializer: Box::new(None),
         })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn assigment() {
+        let mut parser = Parser::new(get_tokens("var a=1;var b=a;"));
+
+        let expected = vec![
+            Stmt::Var(Var {
+                name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                initializer: Box::new(Some(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(1.),
+                }))),
+            }),
+            Stmt::Var(Var {
+                name: Token::Simple(TokenType::Identifier, "b".to_owned(), 1),
+                initializer: Box::new(Some(Expr::Variable(Variable {
+                    name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                }))),
+            }),
+        ];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
