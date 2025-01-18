@@ -1,6 +1,6 @@
 use crate::{
-    expr::{Binary, Expr, Grouping, Literal, Unary},
-    stmt::{Expression, Print, Stmt},
+    expr::{Binary, Expr, Grouping, Literal, Unary, Variable},
+    stmt::{Expression, Print, Stmt, Var},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -18,10 +18,50 @@ impl Parser {
         let mut statements = Vec::new();
 
         while !self.is_at_end() {
-            statements.push(self.statement()?);
+            match self.declaration() {
+                Ok(d) => statements.push(d),
+                Err(e) => {
+                    self.synchronize();
+                    return Err(e);
+                }
+            }
         }
 
         Ok(statements)
+    }
+
+    fn declaration(&mut self) -> Result<Stmt, String> {
+        if self.match_token_type(&[TokenType::Var]) {
+            return match self.var_declaration() {
+                Ok(stmt) => Ok(stmt),
+                Err(e) => {
+                    self.synchronize();
+                    return Err(e);
+                }
+            };
+        }
+
+        return self.statement();
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt, String> {
+        let name = self.consume(TokenType::Identifier, "Expect variable name.")?;
+
+        let initializer = if self.match_token_type(&[TokenType::Equal]) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        let _ = self.consume(
+            TokenType::Semicolon,
+            "Expect ';' after variable declaration",
+        )?;
+
+        Ok(Stmt::Var(Var {
+            name,
+            initializer: Box::new(initializer),
+        }))
     }
 
     fn statement(&mut self) -> Result<Stmt, String> {
@@ -175,6 +215,12 @@ impl Parser {
 
             return Ok(Expr::Grouping(Grouping {
                 expression: Box::new(expr),
+            }));
+        }
+
+        if self.match_token_type(&[TokenType::Identifier]) {
+            return Ok(Expr::Variable(Variable {
+                name: self.previous().clone(),
             }));
         }
 
@@ -353,5 +399,31 @@ mod tests {
     fn incomplete_binary() {
         let mut parser = Parser::new(get_tokens("2+;"));
         assert!(parser.parse().is_err());
+    }
+
+    #[test]
+    fn var_with_identifier() {
+        let mut parser = Parser::new(get_tokens("var a = 1;"));
+
+        let expected = vec![Stmt::Var(Var {
+            name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+            initializer: Box::new(Some(Expr::Literal(Literal {
+                value: LiteralType::FloatLiteral(1.),
+            }))),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn var_without_identifier() {
+        let mut parser = Parser::new(get_tokens("var a;"));
+
+        let expected = vec![Stmt::Var(Var {
+            name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+            initializer: Box::new(None),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
     }
 }

@@ -3,7 +3,7 @@ use std::fs;
 use std::io::{stdin, stdout, Write};
 use std::{env, process};
 
-pub mod ast_printer;
+pub mod environment;
 pub mod expr;
 pub mod interpreter;
 pub mod parser;
@@ -11,7 +11,6 @@ pub mod scanner;
 pub mod stmt;
 pub mod token;
 
-use ast_printer::AstPrinter;
 use interpreter::Interpreter;
 use parser::Parser;
 
@@ -47,49 +46,54 @@ impl Config {
     }
 }
 
-pub fn run_file(config: Config) -> Result<(), Box<dyn Error>> {
-    let source = fs::read_to_string(config.filename)?;
-    run(&source);
-
-    Ok(())
+#[derive(Default)]
+pub struct Lox {
+    interpreter: Interpreter,
 }
 
-pub fn run_prompt() {
-    loop {
-        print!(">");
-        stdout().flush().unwrap();
-        let mut line = String::new();
-        let _ = stdin().read_line(&mut line);
+impl Lox {
+    pub fn run_file(&mut self, config: Config) -> Result<(), Box<dyn Error>> {
+        let source = fs::read_to_string(config.filename)?;
+        self.run(&source);
 
-        run(line.trim());
+        Ok(())
     }
-}
 
-fn run(source: &str) {
-    let mut scanner = Scanner::new(source);
-    match scanner.scan_tokens() {
-        Err(err) => eprintln!("{err}"),
-        Ok(tokens) => {
-            let mut parser = Parser::new(tokens);
-            match parser.parse() {
-                Ok(statements) => {
-                    let mut interpreter = Interpreter::default();
+    pub fn run_prompt(&mut self) {
+        loop {
+            print!(">");
+            stdout().flush().unwrap();
+            let mut line = String::new();
+            let _ = stdin().read_line(&mut line);
 
-                    match interpreter.interpret(&statements) {
-                        Ok(_) => (),
-                        Err(err) => {
-                            eprintln!("{err}");
-                            process::exit(70); // C sysexits.h EX_SOFTWARE internal software error
+            self.run(line.trim());
+        }
+    }
+
+    fn run(&mut self, source: &str) {
+        let mut scanner = Scanner::new(source);
+        match scanner.scan_tokens() {
+            Err(err) => eprintln!("{err}"),
+            Ok(tokens) => {
+                let mut parser = Parser::new(tokens);
+                match parser.parse() {
+                    Ok(statements) => {
+                        match self.interpreter.interpret(&statements) {
+                            Ok(_) => (),
+                            Err(err) => {
+                                eprintln!("{err}");
+                                process::exit(70); // C sysexits.h EX_SOFTWARE internal software error
+                            }
                         }
                     }
-                }
-                Err(err) => {
-                    eprintln!("{err}");
-                    process::exit(65); // C sysexits.h EX_DATAERR data format error
+                    Err(err) => {
+                        eprintln!("{err}");
+                        process::exit(65); // C sysexits.h EX_DATAERR data format error
+                    }
                 }
             }
-        }
-    };
+        };
+    }
 }
 
 pub fn print_error(line: usize, msg: &str) {

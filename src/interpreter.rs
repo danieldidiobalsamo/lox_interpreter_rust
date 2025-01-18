@@ -1,11 +1,13 @@
 use std::fs::OpenOptions;
 use std::io::Write;
 
-use crate::expr::{AstVisitor, Expr};
+use crate::environment::Environment;
+use crate::expr::{AstVisitor, Expr, Variable};
 use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
 pub struct Interpreter {
+    env: Environment,
     pub write_log: bool,
     log_file: String,
 }
@@ -13,6 +15,7 @@ pub struct Interpreter {
 impl Default for Interpreter {
     fn default() -> Self {
         Self {
+            env: Environment::default(),
             write_log: false,
             log_file: "unit_tests.log".to_owned(),
         }
@@ -22,7 +25,7 @@ impl Default for Interpreter {
 impl Interpreter {
     pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
         for statement in statements {
-            self.execute(&statement)?;
+            self.execute(statement)?;
         }
 
         Ok(())
@@ -157,6 +160,10 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
             _ => Ok(LiteralType::NilLiteral),
         }
     }
+
+    fn visit_variable_expr(&mut self, expr: &Variable) -> Result<LiteralType, String> {
+        return self.env.get(&expr.name);
+    }
 }
 
 impl StmtVisitor<Result<(), String>> for Interpreter {
@@ -177,6 +184,17 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
                 .unwrap();
             file.write((value.to_string() + "\n").as_bytes()).unwrap();
         }
+
+        Ok(())
+    }
+
+    fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), String> {
+        let value = match *stmt.initializer {
+            Some(ref init) => self.evaluate(init)?,
+            None => LiteralType::NilLiteral,
+        };
+
+        self.env.define(&stmt.name.get_lexeme(), &value);
 
         Ok(())
     }
@@ -228,6 +246,7 @@ mod tests {
             let mut i = Interpreter {
                 write_log: true,
                 log_file: name.clone(),
+                ..Default::default()
             };
 
             let _ = File::create(&name).unwrap();
@@ -534,5 +553,24 @@ mod tests {
             .interpret_code("print false != false;")
             .unwrap();
         check_results(&file_name, &vec!["false"]);
+    }
+
+    #[test]
+    fn var() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1; var b=2;print a+b;")
+            .unwrap();
+        check_results(&file_name, &vec!["3"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a; print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["nil"]);
     }
 }
