@@ -31,6 +31,20 @@ impl Interpreter {
         Ok(())
     }
 
+    fn execute_block(&mut self, statements: &[Box<Stmt>], env: Environment) -> Result<(), String> {
+        let previous = self.env.clone();
+
+        self.env = env;
+
+        for statement in statements {
+            self.execute(statement)?;
+        }
+
+        self.env = previous;
+
+        Ok(())
+    }
+
     fn execute(&mut self, statement: &Stmt) -> Result<(), String> {
         statement.accept(self)
     }
@@ -203,6 +217,11 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
 
         self.env.define(&stmt.name.get_lexeme(), &value);
 
+        Ok(())
+    }
+
+    fn visit_block(&mut self, stmt: &crate::stmt::Block) -> Result<(), String> {
+        self.execute_block(&stmt.statements, Environment::new(self.env.clone()))?;
         Ok(())
     }
 }
@@ -605,5 +624,17 @@ mod tests {
             .interpret_code("var a=0; var b=1; var c = a = b; print c;")
             .unwrap();
         check_results(&file_name, &vec!["1"]);
+    }
+
+    #[test]
+    fn block() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1;{print a;var a=2; print a;a = a+1;}print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["1", "2", "1"]);
     }
 }

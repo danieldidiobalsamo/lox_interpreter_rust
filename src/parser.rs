@@ -1,6 +1,6 @@
 use crate::{
     expr::{Assign, Binary, Expr, Grouping, Literal, Unary, Variable},
-    stmt::{Expression, Print, Stmt, Var},
+    stmt::{Block, Expression, Print, Stmt, Var},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -69,7 +69,25 @@ impl Parser {
             return self.print_statement();
         }
 
+        if self.match_token_type(&[TokenType::LeftBrace]) {
+            return Ok(Stmt::Block(Block {
+                statements: self.block()?,
+            }));
+        }
+
         self.expression_statement()
+    }
+
+    fn block(&mut self) -> Result<Vec<Box<Stmt>>, String> {
+        let mut statements = Vec::new();
+
+        while !self.check(&TokenType::RightBrace) {
+            statements.push(Box::new(self.declaration()?));
+        }
+
+        self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
+
+        Ok(statements)
     }
 
     fn print_statement(&mut self) -> Result<Stmt, String> {
@@ -464,6 +482,30 @@ mod tests {
                 }))),
             }),
         ];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn block() {
+        let mut parser = Parser::new(get_tokens("{var a=1;var b=2;}"));
+
+        let expected = vec![Stmt::Block(Block {
+            statements: vec![
+                Box::new(Stmt::Var(Var {
+                    name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                    initializer: Box::new(Some(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(1.),
+                    }))),
+                })),
+                Box::new(Stmt::Var(Var {
+                    name: Token::Simple(TokenType::Identifier, "b".to_owned(), 1),
+                    initializer: Box::new(Some(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    }))),
+                })),
+            ],
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
