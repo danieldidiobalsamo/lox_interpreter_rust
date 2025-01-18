@@ -1,5 +1,6 @@
 use crate::{
-    expr::{Binary, Expr, Grouping, Literal, Unary},
+    expr::{Assign, Binary, Expr, Grouping, Literal, Unary, Variable},
+    stmt::{Block, Expression, Print, Stmt, Var},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -13,12 +14,121 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<Expr, String> {
-        self.expression()
+    pub fn parse(&mut self) -> Result<Vec<Stmt>, String> {
+        let mut statements = Vec::new();
+
+        while !self.is_at_end() {
+            match self.declaration() {
+                Ok(d) => statements.push(d),
+                Err(e) => {
+                    self.synchronize();
+                    return Err(e);
+                }
+            }
+        }
+
+        Ok(statements)
+    }
+
+    fn declaration(&mut self) -> Result<Stmt, String> {
+        if self.match_token_type(&[TokenType::Var]) {
+            return match self.var_declaration() {
+                Ok(stmt) => Ok(stmt),
+                Err(e) => {
+                    self.synchronize();
+                    return Err(e);
+                }
+            };
+        }
+
+        return self.statement();
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt, String> {
+        let name = self.consume(TokenType::Identifier, "Expect variable name.")?;
+
+        let initializer = if self.match_token_type(&[TokenType::Equal]) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        let _ = self.consume(
+            TokenType::Semicolon,
+            "Expect ';' after variable declaration",
+        )?;
+
+        Ok(Stmt::Var(Var {
+            name,
+            initializer: Box::new(initializer),
+        }))
+    }
+
+    fn statement(&mut self) -> Result<Stmt, String> {
+        if self.match_token_type(&[TokenType::Print]) {
+            return self.print_statement();
+        }
+
+        if self.match_token_type(&[TokenType::LeftBrace]) {
+            return Ok(Stmt::Block(Block {
+                statements: self.block()?,
+            }));
+        }
+
+        self.expression_statement()
+    }
+
+    fn block(&mut self) -> Result<Vec<Box<Stmt>>, String> {
+        let mut statements = Vec::new();
+
+        while !self.check(&TokenType::RightBrace) {
+            statements.push(Box::new(self.declaration()?));
+        }
+
+        self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
+
+        Ok(statements)
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt, String> {
+        let val = self.expression()?;
+        let _ = self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+
+        return Ok(Stmt::Print(Print {
+            expression: Box::new(val),
+        }));
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt, String> {
+        let expr = self.expression()?;
+        let _ = self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+
+        return Ok(Stmt::Expression(Expression {
+            expression: Box::new(expr),
+        }));
     }
 
     fn expression(&mut self) -> Result<Expr, String> {
-        self.equality()
+        self.assigment()
+    }
+
+    fn assigment(&mut self) -> Result<Expr, String> {
+        let expr = self.equality()?;
+
+        if self.match_token_type(&[TokenType::Equal]) {
+            let value = self.assigment()?;
+
+            if let Expr::Variable(var) = expr {
+                return Ok(Expr::Assign(Assign {
+                    name: var.name,
+                    value: Box::new(value),
+                }));
+            } else {
+                return Err("Invalid assignment target.".to_owned());
+            }
+        }
+
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expr, String> {
@@ -145,6 +255,12 @@ impl Parser {
             }));
         }
 
+        if self.match_token_type(&[TokenType::Identifier]) {
+            return Ok(Expr::Variable(Variable {
+                name: self.previous().clone(),
+            }));
+        }
+
         Err(self.build_error(&self.peek().clone(), "Expect expression."))
     }
 
@@ -180,7 +296,7 @@ impl Parser {
     }
 
     fn is_at_end(&self) -> bool {
-        self.current == self.tokens.len()
+        *self.peek().get_type() == TokenType::Eof
     }
 
     fn advance(&mut self) -> &Token {
@@ -237,80 +353,160 @@ mod tests {
 
     #[test]
     fn unary_minus() {
-        let mut parser = Parser::new(get_tokens("-2"));
+        let mut parser = Parser::new(get_tokens("-2;"));
 
-        let expected = Expr::Unary(Unary {
-            operator: Token::Simple(TokenType::Minus, "-".to_string(), 1),
-            right: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(2.),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Unary(Unary {
+                operator: Token::Simple(TokenType::Minus, "-".to_string(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(2.),
+                })),
             })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn simple_add() {
-        let mut parser = Parser::new(get_tokens("2+2"));
+        let mut parser = Parser::new(get_tokens("2+2;"));
 
-        let expected = Expr::Binary(Binary {
-            left: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(2.),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Binary(Binary {
+                left: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(2.),
+                })),
+                operator: Token::Simple(TokenType::Plus, "+".to_string(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(2.),
+                })),
             })),
-            operator: Token::Simple(TokenType::Plus, "+".to_string(), 1),
-            right: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(2.),
-            })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn equality() {
-        let mut parser = Parser::new(get_tokens("1 == 2 == 3"));
+        let mut parser = Parser::new(get_tokens("1 == 2 == 3;"));
 
-        let expected = Expr::Binary(Binary {
-            operator: Token::Simple(TokenType::EqualEqual, "==".to_string(), 1),
-            left: Box::new(Expr::Binary(Binary {
-                left: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(1.),
-                })),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Binary(Binary {
                 operator: Token::Simple(TokenType::EqualEqual, "==".to_string(), 1),
+                left: Box::new(Expr::Binary(Binary {
+                    left: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(1.),
+                    })),
+                    operator: Token::Simple(TokenType::EqualEqual, "==".to_string(), 1),
+                    right: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    })),
+                })),
                 right: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(2.),
+                    value: LiteralType::FloatLiteral(3.),
                 })),
             })),
-            right: Box::new(Expr::Literal(Literal {
-                value: LiteralType::FloatLiteral(3.),
-            })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn grouping() {
-        let mut parser = Parser::new(get_tokens("(2*2)"));
+        let mut parser = Parser::new(get_tokens("(2*2);"));
 
-        let expected = Expr::Grouping(Grouping {
-            expression: Box::new(Expr::Binary(Binary {
-                left: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(2.),
-                })),
-                operator: Token::Simple(TokenType::Star, "*".to_string(), 1),
-                right: Box::new(Expr::Literal(Literal {
-                    value: LiteralType::FloatLiteral(2.),
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Grouping(Grouping {
+                expression: Box::new(Expr::Binary(Binary {
+                    left: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    })),
+                    operator: Token::Simple(TokenType::Star, "*".to_string(), 1),
+                    right: Box::new(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    })),
                 })),
             })),
-        });
+        })];
 
         assert_eq!(parser.parse().unwrap(), expected);
     }
 
     #[test]
     fn incomplete_binary() {
-        let mut parser = Parser::new(get_tokens("2+"));
+        let mut parser = Parser::new(get_tokens("2+;"));
         assert!(parser.parse().is_err());
+    }
+
+    #[test]
+    fn var_with_identifier() {
+        let mut parser = Parser::new(get_tokens("var a = 1;"));
+
+        let expected = vec![Stmt::Var(Var {
+            name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+            initializer: Box::new(Some(Expr::Literal(Literal {
+                value: LiteralType::FloatLiteral(1.),
+            }))),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn var_without_identifier() {
+        let mut parser = Parser::new(get_tokens("var a;"));
+
+        let expected = vec![Stmt::Var(Var {
+            name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+            initializer: Box::new(None),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn assigment() {
+        let mut parser = Parser::new(get_tokens("var a=1;var b=a;"));
+
+        let expected = vec![
+            Stmt::Var(Var {
+                name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                initializer: Box::new(Some(Expr::Literal(Literal {
+                    value: LiteralType::FloatLiteral(1.),
+                }))),
+            }),
+            Stmt::Var(Var {
+                name: Token::Simple(TokenType::Identifier, "b".to_owned(), 1),
+                initializer: Box::new(Some(Expr::Variable(Variable {
+                    name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                }))),
+            }),
+        ];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn block() {
+        let mut parser = Parser::new(get_tokens("{var a=1;var b=2;}"));
+
+        let expected = vec![Stmt::Block(Block {
+            statements: vec![
+                Box::new(Stmt::Var(Var {
+                    name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                    initializer: Box::new(Some(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(1.),
+                    }))),
+                })),
+                Box::new(Stmt::Var(Var {
+                    name: Token::Simple(TokenType::Identifier, "b".to_owned(), 1),
+                    initializer: Box::new(Some(Expr::Literal(Literal {
+                        value: LiteralType::FloatLiteral(2.),
+                    }))),
+                })),
+            ],
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
     }
 }
