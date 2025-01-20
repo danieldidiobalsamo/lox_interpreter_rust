@@ -105,7 +105,7 @@ impl Parser {
     fn block(&mut self) -> Result<Vec<Box<Stmt>>, String> {
         let mut statements = Vec::new();
 
-        while !self.check(&TokenType::RightBrace) {
+        while !self.check(&TokenType::RightBrace) && !self.is_at_end() {
             statements.push(Box::new(self.declaration()?));
         }
 

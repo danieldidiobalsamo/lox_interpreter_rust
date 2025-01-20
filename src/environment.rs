@@ -1,27 +1,30 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::token::{LiteralType, Token};
 
 #[derive(Debug, Clone)]
 pub struct Environment {
     values: HashMap<String, LiteralType>,
-    enclosing: Box<Option<Environment>>,
+    enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Default for Environment {
     fn default() -> Self {
         Self {
             values: HashMap::new(),
-            enclosing: Box::new(None),
+            enclosing: None,
         }
     }
 }
 
 impl Environment {
-    pub fn new(enclosing: Environment) -> Self {
-        Self {
-            enclosing: Box::new(Some(enclosing)),
-            ..Default::default()
+    pub fn new(enclosing: Option<Rc<RefCell<Environment>>>) -> Self {
+        match enclosing {
+            None => Self::default(),
+            Some(env) => Self {
+                enclosing: Some(env),
+                ..Default::default()
+            },
         }
     }
 
@@ -34,8 +37,8 @@ impl Environment {
 
         match self.values.get(&var_name) {
             Some(val) => Ok(val.clone()),
-            None => match *self.enclosing {
-                Some(ref env) => env.get(name),
+            None => match &self.enclosing {
+                Some(env) => env.borrow().get(name),
                 None => Err(format!("Undefined variable: '{var_name}'.")),
             },
         }
@@ -49,10 +52,38 @@ impl Environment {
                 *self.values.get_mut(&var_name).unwrap() = value.clone();
                 Ok(())
             }
-            None => match *self.enclosing {
-                Some(ref mut env) => env.assign(name, value),
+            None => match &self.enclosing {
+                Some(env) => env.borrow_mut().assign(name, value),
                 None => Err(format!("Undefined variable: '{var_name}'.")),
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::token::TokenType;
+
+    #[test]
+    fn env_nested() {
+        // this test is to check this kind of nested blocks
+        // var i=1; while (i < 5){print i;i+=1;}
+
+        let mut map = HashMap::new();
+        map.insert("a".to_owned(), LiteralType::FloatLiteral(1.));
+
+        let outer = Environment::new(Some(Rc::new(RefCell::new(Environment {
+            values: map,
+            enclosing: None,
+        }))));
+
+        let mut inner = Environment::default();
+        inner.define("a", &LiteralType::FloatLiteral(4.));
+
+        let token = Token::Simple(TokenType::Identifier, "a".to_owned(), 1);
+
+        assert_eq!(inner.get(&token).unwrap(), LiteralType::FloatLiteral(4.));
+        assert_eq!(outer.get(&token).unwrap(), LiteralType::FloatLiteral(1.));
     }
 }

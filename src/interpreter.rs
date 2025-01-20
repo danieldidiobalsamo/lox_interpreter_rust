@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::rc::Rc;
 
 use crate::environment::Environment;
 use crate::expr::{AstVisitor, Expr, Variable};
@@ -7,15 +9,16 @@ use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
 pub struct Interpreter {
-    env: Environment,
+    env: Rc<RefCell<Environment>>,
     pub write_log: bool,
     log_file: String,
 }
 
 impl Default for Interpreter {
     fn default() -> Self {
+        let globals = Rc::new(RefCell::new(Environment::default()));
         Self {
-            env: Environment::default(),
+            env: Rc::clone(&globals),
             write_log: false,
             log_file: "unit_tests.log".to_owned(),
         }
@@ -32,12 +35,18 @@ impl Interpreter {
     }
 
     fn execute_block(&mut self, statements: &[Box<Stmt>], env: Environment) -> Result<(), String> {
-        let previous = self.env.clone();
+        let previous = Rc::clone(&self.env);
 
-        self.env = env;
+        self.env = Rc::new(RefCell::new(env));
 
         for statement in statements {
-            self.execute(statement)?;
+            match self.execute(statement) {
+                Ok(_) => (),
+                Err(e) => {
+                    self.env = previous;
+                    return Err(e);
+                }
+            };
         }
 
         self.env = previous;
@@ -176,12 +185,12 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     }
 
     fn visit_variable_expr(&mut self, expr: &Variable) -> Result<LiteralType, String> {
-        return self.env.get(&expr.name);
+        return self.env.borrow().get(&expr.name);
     }
 
     fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<LiteralType, String> {
         let value = self.evaluate(&expr.value)?;
-        self.env.assign(&expr.name, &value)?;
+        self.env.borrow_mut().assign(&expr.name, &value)?;
 
         Ok(value)
     }
@@ -236,13 +245,15 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
             None => LiteralType::NilLiteral,
         };
 
-        self.env.define(&stmt.name.get_lexeme(), &value);
+        self.env
+            .borrow_mut()
+            .define(&stmt.name.get_lexeme(), &value);
 
         Ok(())
     }
 
     fn visit_block(&mut self, stmt: &crate::stmt::Block) -> Result<(), String> {
-        self.execute_block(&stmt.statements, Environment::new(self.env.clone()))?;
+        self.execute_block(&stmt.statements, Environment::new(Some(self.env.clone())))?;
         Ok(())
     }
 
@@ -683,6 +694,20 @@ mod tests {
             .interpret_code("var a=1;{print a;var a=2; print a;a = a+1;}print a;")
             .unwrap();
         check_results(&file_name, &vec!["1", "2", "1"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1;{a=a+1;}print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["2"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=-5; if (a < 0){a=1;}print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["1"]);
     }
 
     #[test]
