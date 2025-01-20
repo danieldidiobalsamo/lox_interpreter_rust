@@ -185,6 +185,27 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
 
         Ok(value)
     }
+
+    fn visit_logical_expr(&mut self, expr: &crate::expr::Logical) -> Result<LiteralType, String> {
+        let left = self.evaluate(&expr.left)?;
+
+        // check if left operand is false to check if we can short-circuit
+        match expr.operator.get_type() {
+            TokenType::Or => {
+                if self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            TokenType::And => {
+                if !self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            _ => return Err(format!("{:?} is not a logical operator", expr.operator)),
+        };
+
+        self.evaluate(&expr.right)
+    }
 }
 
 impl StmtVisitor<Result<(), String>> for Interpreter {
@@ -688,5 +709,45 @@ mod tests {
             .interpret_code("var a=1; if (a == 2){print \"if\";}")
             .unwrap();
         check_results(&file_name, &vec![""]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1; var b=3; if (a+b >=4 and b <= 3){print \"if\";}")
+            .unwrap();
+        check_results(&file_name, &vec!["if"]);
+    }
+
+    #[test]
+    fn logical() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=((true or false) and true); print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["true"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=((true or false) and (true and false)); print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print \"hi\" or 2;")
+            .unwrap();
+        check_results(&file_name, &vec!["hi"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print nil or \"yes\";")
+            .unwrap();
+        check_results(&file_name, &vec!["yes"]);
     }
 }

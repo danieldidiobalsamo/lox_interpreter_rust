@@ -1,5 +1,5 @@
 use crate::{
-    expr::{Assign, Binary, Expr, Grouping, Literal, Unary, Variable},
+    expr::{Assign, Binary, Expr, Grouping, Literal, Logical, Unary, Variable},
     stmt::{Block, Expression, If, Print, Stmt, Var},
     token::{LiteralType, Token, TokenType},
 };
@@ -137,7 +137,7 @@ impl Parser {
     }
 
     fn assigment(&mut self) -> Result<Expr, String> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if self.match_token_type(&[TokenType::Equal]) {
             let value = self.assigment()?;
@@ -150,6 +150,40 @@ impl Parser {
             } else {
                 return Err("Invalid assignment target.".to_owned());
             }
+        }
+
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> Result<Expr, String> {
+        let mut expr = self.and()?;
+
+        while self.match_token_type(&[TokenType::Or]) {
+            let operator = self.previous().clone();
+            let right = self.and()?;
+
+            expr = Expr::Logical(Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            });
+        }
+
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> Result<Expr, String> {
+        let mut expr = self.equality()?;
+
+        while self.match_token_type(&[TokenType::And]) {
+            let operator = self.previous().clone();
+            let right = self.equality()?;
+
+            expr = Expr::Logical(Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            });
         }
 
         Ok(expr)
@@ -366,7 +400,7 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use crate::scanner::Scanner;
+    use crate::{expr::Logical, scanner::Scanner};
 
     use super::*;
 
@@ -556,6 +590,44 @@ mod tests {
                     }))],
                 }))),
             }
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn logical_or() {
+        let mut parser = Parser::new(get_tokens("true or false;"));
+
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Logical(Logical {
+                left: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                operator: Token::Simple(TokenType::Or, "or".to_owned(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(false),
+                })),
+            })),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn logical_and() {
+        let mut parser = Parser::new(get_tokens("true and false;"));
+
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Logical(Logical {
+                left: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                operator: Token::Simple(TokenType::And, "and".to_owned(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(false),
+                })),
+            })),
         })];
 
         assert_eq!(parser.parse().unwrap(), expected);
