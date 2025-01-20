@@ -268,6 +268,17 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
 
         Ok(())
     }
+
+    fn visit_while(&mut self, stmt: &crate::stmt::While) -> Result<(), String> {
+        let mut cond = self.evaluate(&stmt.condition)?;
+        while self.is_truthy(&cond) {
+            self.execute(&stmt.body)?;
+
+            cond = self.evaluate(&stmt.condition)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -774,5 +785,17 @@ mod tests {
             .interpret_code("print nil or \"yes\";")
             .unwrap();
         check_results(&file_name, &vec!["yes"]);
+    }
+
+    #[test]
+    fn while_statement() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var i=0; while (i < 5){print i; i = i + 1;}")
+            .unwrap();
+        check_results(&file_name, &vec!["0", "1", "2", "3", "4"]);
     }
 }

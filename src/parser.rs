@@ -1,6 +1,6 @@
 use crate::{
     expr::{Assign, Binary, Expr, Grouping, Literal, Logical, Unary, Variable},
-    stmt::{Block, Expression, If, Print, Stmt, Var},
+    stmt::{Block, Expression, If, Print, Stmt, Var, While},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -73,6 +73,10 @@ impl Parser {
             return self.print_statement();
         }
 
+        if self.match_token_type(&[TokenType::While]) {
+            return self.while_statement();
+        }
+
         if self.match_token_type(&[TokenType::LeftBrace]) {
             return Ok(Stmt::Block(Block {
                 statements: self.block()?,
@@ -80,6 +84,19 @@ impl Parser {
         }
 
         self.expression_statement()
+    }
+
+    fn while_statement(&mut self) -> Result<Stmt, String> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
+        let condition = self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after while condition.")?;
+
+        let body = self.statement()?;
+
+        Ok(Stmt::While(While {
+            condition: Box::new(condition),
+            body: Box::new(body),
+        }))
     }
 
     fn if_statement(&mut self) -> Result<Stmt, String> {
@@ -628,6 +645,28 @@ mod tests {
                     value: LiteralType::BoolLiteral(false),
                 })),
             })),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn while_statement() {
+        let mut parser = Parser::new(get_tokens("while(true){print 1;}"));
+
+        let expected = vec![Stmt::While({
+            While {
+                condition: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                body: Box::new(Stmt::Block(Block {
+                    statements: vec![Box::new(Stmt::Print(Print {
+                        expression: Box::new(Expr::Literal(Literal {
+                            value: LiteralType::FloatLiteral(1.),
+                        })),
+                    }))],
+                })),
+            }
         })];
 
         assert_eq!(parser.parse().unwrap(), expected);
