@@ -224,6 +224,18 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
         self.execute_block(&stmt.statements, Environment::new(self.env.clone()))?;
         Ok(())
     }
+
+    fn visit_if(&mut self, stmt: &crate::stmt::If) -> Result<(), String> {
+        let cond = &self.evaluate(&stmt.condition)?;
+
+        if self.is_truthy(cond) {
+            self.execute(&stmt.then_branch)?;
+        } else if let Some(ref else_branch) = *stmt.else_branch {
+            self.execute(&else_branch)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -285,11 +297,13 @@ mod tests {
     }
 
     pub fn check_results(log_filename: &str, expected: &[&str]) {
-        for (i, line) in fs::read_to_string(&log_filename)
-            .unwrap()
-            .lines()
-            .enumerate()
-        {
+        let content = fs::read_to_string(&log_filename).unwrap();
+
+        if content.is_empty() {
+            assert!(expected == vec![""]);
+        }
+
+        for (i, line) in content.lines().enumerate() {
             assert_eq!(line, expected[i]);
         }
     }
@@ -318,19 +332,31 @@ mod tests {
             .unwrap();
         check_results(&file_name, &vec!["false"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!false;").unwrap();
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print !false;")
+            .unwrap();
         check_results(&file_name, &vec!["true"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!!true;").unwrap();
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print !!true;")
+            .unwrap();
         check_results(&file_name, &vec!["true"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!nil;").unwrap();
+        let file_name = setup.lock().unwrap().interpret_code("print !nil;").unwrap();
         check_results(&file_name, &vec!["true"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!5.0;").unwrap();
+        let file_name = setup.lock().unwrap().interpret_code("print !5.0;").unwrap();
         check_results(&file_name, &vec!["false"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!\"abc\";").unwrap();
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print !\"abc\";")
+            .unwrap();
         check_results(&file_name, &vec!["false"]);
     }
 
@@ -636,5 +662,31 @@ mod tests {
             .interpret_code("var a=1;{print a;var a=2; print a;a = a+1;}print a;")
             .unwrap();
         check_results(&file_name, &vec!["1", "2", "1"]);
+    }
+
+    #[test]
+    fn if_statement() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=true; if (a){print \"if\";}else{print \"else\";}")
+            .unwrap();
+        check_results(&file_name, &vec!["if"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=false; if (a){print \"if\";}else{print \"else\";}")
+            .unwrap();
+        check_results(&file_name, &vec!["else"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1; if (a == 2){print \"if\";}")
+            .unwrap();
+        check_results(&file_name, &vec![""]);
     }
 }

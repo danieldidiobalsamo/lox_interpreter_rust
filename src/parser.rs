@@ -1,6 +1,6 @@
 use crate::{
     expr::{Assign, Binary, Expr, Grouping, Literal, Unary, Variable},
-    stmt::{Block, Expression, Print, Stmt, Var},
+    stmt::{Block, Expression, If, Print, Stmt, Var},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -65,6 +65,10 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, String> {
+        if self.match_token_type(&[TokenType::If]) {
+            return self.if_statement();
+        }
+
         if self.match_token_type(&[TokenType::Print]) {
             return self.print_statement();
         }
@@ -76,6 +80,26 @@ impl Parser {
         }
 
         self.expression_statement()
+    }
+
+    fn if_statement(&mut self) -> Result<Stmt, String> {
+        let _ = self.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+        let condition = self.expression()?;
+        let _ = self.consume(TokenType::RightParen, "Expect ')' after if condition.")?;
+
+        let then_branch = self.statement()?;
+        let else_branch = if self.match_token_type(&[TokenType::Else]) {
+            // note: in lox, else statement is bound to the nearest if that precedes it
+            Some(self.statement()?)
+        } else {
+            None
+        };
+
+        return Ok(Stmt::If(If {
+            condition: Box::new(condition),
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(else_branch),
+        }));
     }
 
     fn block(&mut self) -> Result<Vec<Box<Stmt>>, String> {
@@ -505,6 +529,33 @@ mod tests {
                     }))),
                 })),
             ],
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn if_statement() {
+        let mut parser = Parser::new(get_tokens("if (true) {var a;} else{var b;}"));
+
+        let expected = vec![Stmt::If({
+            If {
+                condition: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                then_branch: Box::new(Stmt::Block(Block {
+                    statements: vec![Box::new(Stmt::Var(Var {
+                        name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                        initializer: Box::new(None),
+                    }))],
+                })),
+                else_branch: Box::new(Some(Stmt::Block(Block {
+                    statements: vec![Box::new(Stmt::Var(Var {
+                        name: Token::Simple(TokenType::Identifier, "b".to_owned(), 1),
+                        initializer: Box::new(None),
+                    }))],
+                }))),
+            }
         })];
 
         assert_eq!(parser.parse().unwrap(), expected);
