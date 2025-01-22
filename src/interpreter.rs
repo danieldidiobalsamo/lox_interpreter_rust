@@ -798,4 +798,16 @@ mod tests {
             .unwrap();
         check_results(&file_name, &vec!["0", "1", "2", "3", "4"]);
     }
+
+    #[test]
+    fn for_statement() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("for(var i=0; i < 5; i=i+1){print i;}")
+            .unwrap();
+        check_results(&file_name, &vec!["0", "1", "2", "3", "4"]);
+    }
 }
