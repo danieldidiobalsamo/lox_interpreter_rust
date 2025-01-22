@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::rc::Rc;
 
 use crate::environment::Environment;
 use crate::expr::{AstVisitor, Expr, Variable};
@@ -7,15 +9,16 @@ use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
 pub struct Interpreter {
-    env: Environment,
+    env: Rc<RefCell<Environment>>,
     pub write_log: bool,
     log_file: String,
 }
 
 impl Default for Interpreter {
     fn default() -> Self {
+        let globals = Rc::new(RefCell::new(Environment::default()));
         Self {
-            env: Environment::default(),
+            env: Rc::clone(&globals),
             write_log: false,
             log_file: "unit_tests.log".to_owned(),
         }
@@ -32,12 +35,18 @@ impl Interpreter {
     }
 
     fn execute_block(&mut self, statements: &[Box<Stmt>], env: Environment) -> Result<(), String> {
-        let previous = self.env.clone();
+        let previous = Rc::clone(&self.env);
 
-        self.env = env;
+        self.env = Rc::new(RefCell::new(env));
 
         for statement in statements {
-            self.execute(statement)?;
+            match self.execute(statement) {
+                Ok(_) => (),
+                Err(e) => {
+                    self.env = previous;
+                    return Err(e);
+                }
+            };
         }
 
         self.env = previous;
@@ -176,14 +185,35 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     }
 
     fn visit_variable_expr(&mut self, expr: &Variable) -> Result<LiteralType, String> {
-        return self.env.get(&expr.name);
+        return self.env.borrow().get(&expr.name);
     }
 
     fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<LiteralType, String> {
         let value = self.evaluate(&expr.value)?;
-        self.env.assign(&expr.name, &value)?;
+        self.env.borrow_mut().assign(&expr.name, &value)?;
 
         Ok(value)
+    }
+
+    fn visit_logical_expr(&mut self, expr: &crate::expr::Logical) -> Result<LiteralType, String> {
+        let left = self.evaluate(&expr.left)?;
+
+        // check if left operand is false to check if we can short-circuit
+        match expr.operator.get_type() {
+            TokenType::Or => {
+                if self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            TokenType::And => {
+                if !self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            _ => return Err(format!("{:?} is not a logical operator", expr.operator)),
+        };
+
+        self.evaluate(&expr.right)
     }
 }
 
@@ -215,13 +245,38 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
             None => LiteralType::NilLiteral,
         };
 
-        self.env.define(&stmt.name.get_lexeme(), &value);
+        self.env
+            .borrow_mut()
+            .define(&stmt.name.get_lexeme(), &value);
 
         Ok(())
     }
 
     fn visit_block(&mut self, stmt: &crate::stmt::Block) -> Result<(), String> {
-        self.execute_block(&stmt.statements, Environment::new(self.env.clone()))?;
+        self.execute_block(&stmt.statements, Environment::new(Some(self.env.clone())))?;
+        Ok(())
+    }
+
+    fn visit_if(&mut self, stmt: &crate::stmt::If) -> Result<(), String> {
+        let cond = &self.evaluate(&stmt.condition)?;
+
+        if self.is_truthy(cond) {
+            self.execute(&stmt.then_branch)?;
+        } else if let Some(ref else_branch) = *stmt.else_branch {
+            self.execute(&else_branch)?;
+        }
+
+        Ok(())
+    }
+
+    fn visit_while(&mut self, stmt: &crate::stmt::While) -> Result<(), String> {
+        let mut cond = self.evaluate(&stmt.condition)?;
+        while self.is_truthy(&cond) {
+            self.execute(&stmt.body)?;
+
+            cond = self.evaluate(&stmt.condition)?;
+        }
+
         Ok(())
     }
 }
@@ -285,11 +340,13 @@ mod tests {
     }
 
     pub fn check_results(log_filename: &str, expected: &[&str]) {
-        for (i, line) in fs::read_to_string(&log_filename)
-            .unwrap()
-            .lines()
-            .enumerate()
-        {
+        let content = fs::read_to_string(&log_filename).unwrap();
+
+        if content.is_empty() {
+            assert!(expected == vec![""]);
+        }
+
+        for (i, line) in content.lines().enumerate() {
             assert_eq!(line, expected[i]);
         }
     }
@@ -318,19 +375,31 @@ mod tests {
             .unwrap();
         check_results(&file_name, &vec!["false"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!false;").unwrap();
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print !false;")
+            .unwrap();
         check_results(&file_name, &vec!["true"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!!true;").unwrap();
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print !!true;")
+            .unwrap();
         check_results(&file_name, &vec!["true"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!nil;").unwrap();
+        let file_name = setup.lock().unwrap().interpret_code("print !nil;").unwrap();
         check_results(&file_name, &vec!["true"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!5.0;").unwrap();
+        let file_name = setup.lock().unwrap().interpret_code("print !5.0;").unwrap();
         check_results(&file_name, &vec!["false"]);
 
-        let file_name = setup.lock().unwrap().interpret_code("!\"abc\";").unwrap();
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print !\"abc\";")
+            .unwrap();
         check_results(&file_name, &vec!["false"]);
     }
 
@@ -636,5 +705,109 @@ mod tests {
             .interpret_code("var a=1;{print a;var a=2; print a;a = a+1;}print a;")
             .unwrap();
         check_results(&file_name, &vec!["1", "2", "1"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1;{a=a+1;}print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["2"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=-5; if (a < 0){a=1;}print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["1"]);
+    }
+
+    #[test]
+    fn if_statement() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=true; if (a){print \"if\";}else{print \"else\";}")
+            .unwrap();
+        check_results(&file_name, &vec!["if"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=false; if (a){print \"if\";}else{print \"else\";}")
+            .unwrap();
+        check_results(&file_name, &vec!["else"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1; if (a == 2){print \"if\";}")
+            .unwrap();
+        check_results(&file_name, &vec![""]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=1; var b=3; if (a+b >=4 and b <= 3){print \"if\";}")
+            .unwrap();
+        check_results(&file_name, &vec!["if"]);
+    }
+
+    #[test]
+    fn logical() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=((true or false) and true); print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["true"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=((true or false) and (true and false)); print a;")
+            .unwrap();
+        check_results(&file_name, &vec!["false"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print \"hi\" or 2;")
+            .unwrap();
+        check_results(&file_name, &vec!["hi"]);
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("print nil or \"yes\";")
+            .unwrap();
+        check_results(&file_name, &vec!["yes"]);
+    }
+
+    #[test]
+    fn while_statement() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("var i=0; while (i < 5){print i; i = i + 1;}")
+            .unwrap();
+        check_results(&file_name, &vec!["0", "1", "2", "3", "4"]);
+    }
+
+    #[test]
+    fn for_statement() {
+        let setup = Setup::new();
+
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("for(var i=0; i < 5; i=i+1){print i;}")
+            .unwrap();
+        check_results(&file_name, &vec!["0", "1", "2", "3", "4"]);
     }
 }

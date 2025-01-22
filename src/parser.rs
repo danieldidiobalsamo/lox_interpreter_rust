@@ -1,6 +1,6 @@
 use crate::{
-    expr::{Assign, Binary, Expr, Grouping, Literal, Unary, Variable},
-    stmt::{Block, Expression, Print, Stmt, Var},
+    expr::{Assign, Binary, Expr, Grouping, Literal, Logical, Unary, Variable},
+    stmt::{Block, Expression, If, Print, Stmt, Var, While},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -65,8 +65,20 @@ impl Parser {
     }
 
     fn statement(&mut self) -> Result<Stmt, String> {
+        if self.match_token_type(&[TokenType::For]) {
+            return self.for_statement();
+        }
+
+        if self.match_token_type(&[TokenType::If]) {
+            return self.if_statement();
+        }
+
         if self.match_token_type(&[TokenType::Print]) {
             return self.print_statement();
+        }
+
+        if self.match_token_type(&[TokenType::While]) {
+            return self.while_statement();
         }
 
         if self.match_token_type(&[TokenType::LeftBrace]) {
@@ -78,10 +90,103 @@ impl Parser {
         self.expression_statement()
     }
 
+    fn for_statement(&mut self) -> Result<Stmt, String> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
+
+        let initializer = if self.match_token_type(&[TokenType::Semicolon]) {
+            None
+        } else if self.match_token_type(&[TokenType::Var]) {
+            Some(self.var_declaration()?)
+        } else {
+            Some(self.expression_statement()?)
+        };
+
+        let mut condition = if !self.check(&TokenType::Semicolon) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        self.consume(TokenType::Semicolon, "Expect ';' after for loop condition.")?;
+
+        let increment = if !self.check(&TokenType::RightParen) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        self.consume(TokenType::RightParen, "Expect ')' after for clauses.")?;
+
+        let mut body = self.statement()?;
+
+        if let Some(inc) = increment {
+            body = Stmt::Block(Block {
+                statements: vec![
+                    Box::new(body),
+                    Box::new(Stmt::Expression(Expression {
+                        expression: Box::new(inc),
+                    })),
+                ],
+            })
+        }
+
+        if condition.is_none() {
+            condition = Some(Expr::Literal(Literal {
+                value: LiteralType::BoolLiteral(true),
+            }));
+        }
+
+        body = Stmt::While(While {
+            condition: Box::new(condition.unwrap()),
+            body: Box::new(body),
+        });
+
+        if let Some(init) = initializer {
+            body = Stmt::Block(Block {
+                statements: vec![Box::new(init), Box::new(body)],
+            })
+        }
+
+        Ok(body)
+    }
+
+    fn while_statement(&mut self) -> Result<Stmt, String> {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
+        let condition = self.expression()?;
+        self.consume(TokenType::RightParen, "Expect ')' after while condition.")?;
+
+        let body = self.statement()?;
+
+        Ok(Stmt::While(While {
+            condition: Box::new(condition),
+            body: Box::new(body),
+        }))
+    }
+
+    fn if_statement(&mut self) -> Result<Stmt, String> {
+        let _ = self.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+        let condition = self.expression()?;
+        let _ = self.consume(TokenType::RightParen, "Expect ')' after if condition.")?;
+
+        let then_branch = self.statement()?;
+        let else_branch = if self.match_token_type(&[TokenType::Else]) {
+            // note: in lox, else statement is bound to the nearest if that precedes it
+            Some(self.statement()?)
+        } else {
+            None
+        };
+
+        return Ok(Stmt::If(If {
+            condition: Box::new(condition),
+            then_branch: Box::new(then_branch),
+            else_branch: Box::new(else_branch),
+        }));
+    }
+
     fn block(&mut self) -> Result<Vec<Box<Stmt>>, String> {
         let mut statements = Vec::new();
 
-        while !self.check(&TokenType::RightBrace) {
+        while !self.check(&TokenType::RightBrace) && !self.is_at_end() {
             statements.push(Box::new(self.declaration()?));
         }
 
@@ -113,7 +218,7 @@ impl Parser {
     }
 
     fn assigment(&mut self) -> Result<Expr, String> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if self.match_token_type(&[TokenType::Equal]) {
             let value = self.assigment()?;
@@ -126,6 +231,40 @@ impl Parser {
             } else {
                 return Err("Invalid assignment target.".to_owned());
             }
+        }
+
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> Result<Expr, String> {
+        let mut expr = self.and()?;
+
+        while self.match_token_type(&[TokenType::Or]) {
+            let operator = self.previous().clone();
+            let right = self.and()?;
+
+            expr = Expr::Logical(Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            });
+        }
+
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> Result<Expr, String> {
+        let mut expr = self.equality()?;
+
+        while self.match_token_type(&[TokenType::And]) {
+            let operator = self.previous().clone();
+            let right = self.equality()?;
+
+            expr = Expr::Logical(Logical {
+                left: Box::new(expr),
+                operator,
+                right: Box::new(right),
+            });
         }
 
         Ok(expr)
@@ -342,7 +481,7 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
-    use crate::scanner::Scanner;
+    use crate::{expr::Logical, scanner::Scanner};
 
     use super::*;
 
@@ -505,6 +644,93 @@ mod tests {
                     }))),
                 })),
             ],
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn if_statement() {
+        let mut parser = Parser::new(get_tokens("if (true) {var a;} else{var b;}"));
+
+        let expected = vec![Stmt::If({
+            If {
+                condition: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                then_branch: Box::new(Stmt::Block(Block {
+                    statements: vec![Box::new(Stmt::Var(Var {
+                        name: Token::Simple(TokenType::Identifier, "a".to_owned(), 1),
+                        initializer: Box::new(None),
+                    }))],
+                })),
+                else_branch: Box::new(Some(Stmt::Block(Block {
+                    statements: vec![Box::new(Stmt::Var(Var {
+                        name: Token::Simple(TokenType::Identifier, "b".to_owned(), 1),
+                        initializer: Box::new(None),
+                    }))],
+                }))),
+            }
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn logical_or() {
+        let mut parser = Parser::new(get_tokens("true or false;"));
+
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Logical(Logical {
+                left: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                operator: Token::Simple(TokenType::Or, "or".to_owned(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(false),
+                })),
+            })),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn logical_and() {
+        let mut parser = Parser::new(get_tokens("true and false;"));
+
+        let expected = vec![Stmt::Expression(Expression {
+            expression: Box::new(Expr::Logical(Logical {
+                left: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                operator: Token::Simple(TokenType::And, "and".to_owned(), 1),
+                right: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(false),
+                })),
+            })),
+        })];
+
+        assert_eq!(parser.parse().unwrap(), expected);
+    }
+
+    #[test]
+    fn while_statement() {
+        let mut parser = Parser::new(get_tokens("while(true){print 1;}"));
+
+        let expected = vec![Stmt::While({
+            While {
+                condition: Box::new(Expr::Literal(Literal {
+                    value: LiteralType::BoolLiteral(true),
+                })),
+                body: Box::new(Stmt::Block(Block {
+                    statements: vec![Box::new(Stmt::Print(Print {
+                        expression: Box::new(Expr::Literal(Literal {
+                            value: LiteralType::FloatLiteral(1.),
+                        })),
+                    }))],
+                })),
+            }
         })];
 
         assert_eq!(parser.parse().unwrap(), expected);
