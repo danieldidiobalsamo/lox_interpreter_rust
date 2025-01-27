@@ -5,19 +5,27 @@ use std::rc::Rc;
 
 use crate::environment::Environment;
 use crate::expr::{AstVisitor, Expr, Variable};
+use crate::lox_callable::{Callable, Clock, Function, LoxCallable};
 use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
 pub struct Interpreter {
     env: Rc<RefCell<Environment>>,
+    globals: Rc<RefCell<Environment>>,
     pub write_log: bool,
     log_file: String,
 }
 
 impl Default for Interpreter {
     fn default() -> Self {
-        let globals = Rc::new(RefCell::new(Environment::default()));
+        let mut globals = Rc::new(RefCell::new(Environment::default()));
+
+        globals
+            .borrow_mut()
+            .define("clock", &LiteralType::Callable(Callable::Clock(Clock {})));
+
         Self {
+            globals: Rc::clone(&globals),
             env: Rc::clone(&globals),
             write_log: false,
             log_file: "unit_tests.log".to_owned(),
@@ -214,6 +222,38 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         };
 
         self.evaluate(&expr.right)
+    }
+
+    fn visit_call_expr(&mut self, expr: &crate::expr::Call) -> Result<LiteralType, String> {
+        let callee = self.evaluate(&expr.callee)?;
+
+        let mut arguments = Vec::new();
+
+        if let Some(args) = &expr.arguments {
+            for arg in args {
+                arguments.push(self.evaluate(arg)?);
+            }
+        }
+
+        if let LiteralType::Callable(c) = callee {
+            match c {
+                Callable::Function(f) => {
+                    if arguments.len() != f.arity() {
+                        Err(format!(
+                            "{} Expected {} arguments but got {}.",
+                            expr.paren.to_string(),
+                            f.arity(),
+                            arguments.len()
+                        ))
+                    } else {
+                        Ok(f.call(&self, &arguments))
+                    }
+                }
+                Callable::Clock(c) => Ok(c.call(&self, &arguments)),
+            }
+        } else {
+            Err(String::from("Can only call functions and classes."))
+        }
     }
 }
 

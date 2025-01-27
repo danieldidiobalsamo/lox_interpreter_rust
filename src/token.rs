@@ -1,3 +1,5 @@
+use crate::lox_callable::Callable;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenType {
     LeftParen,
@@ -97,6 +99,7 @@ pub enum LiteralType {
     FloatLiteral(f64),
     BoolLiteral(bool), // in lox, "nil" and "false" are false, everything else is true
     NilLiteral,
+    Callable(Callable),
 }
 
 impl LiteralType {
@@ -124,6 +127,7 @@ impl ToString for LiteralType {
             LiteralType::FloatLiteral(l) => l.to_string(),
             LiteralType::BoolLiteral(l) => l.to_string(),
             LiteralType::NilLiteral => String::from("nil"),
+            LiteralType::Callable(c) => panic!("TODO : implement to_string for Callable"),
         }
     }
 }
