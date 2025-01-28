@@ -1,6 +1,6 @@
 use crate::{expr::Expr, token::Token};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
     Expression(Expression),
     Print(Print),
@@ -8,6 +8,7 @@ pub enum Stmt {
     Block(Block),
     If(If),
     While(While),
+    Function(Function),
 }
 
 pub trait StmtVisitor<T> {
@@ -17,6 +18,7 @@ pub trait StmtVisitor<T> {
     fn visit_block(&mut self, expr: &Block) -> T;
     fn visit_if(&mut self, expr: &If) -> T;
     fn visit_while(&mut self, expr: &While) -> T;
+    fn visit_function(&mut self, expr: &Function) -> T;
 }
 
 impl Stmt {
@@ -28,40 +30,48 @@ impl Stmt {
             Stmt::Block(block) => visitor.visit_block(block),
             Stmt::If(condition) => visitor.visit_if(condition),
             Stmt::While(while_loop) => visitor.visit_while(while_loop),
+            Stmt::Function(function) => visitor.visit_function(function),
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Expression {
     pub expression: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Print {
     pub expression: Box<Expr>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Var {
     pub name: Token,
     pub initializer: Box<Option<Expr>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Block {
     pub statements: Vec<Box<Stmt>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct If {
     pub condition: Box<Expr>,
     pub then_branch: Box<Stmt>,
     pub else_branch: Box<Option<Stmt>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct While {
     pub condition: Box<Expr>,
     pub body: Box<Stmt>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Function {
+    pub name: Token,
+    pub params: Vec<Token>,
+    pub body: Vec<Box<Stmt>>,
 }

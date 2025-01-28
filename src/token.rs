@@ -127,7 +127,10 @@ impl ToString for LiteralType {
             LiteralType::FloatLiteral(l) => l.to_string(),
             LiteralType::BoolLiteral(l) => l.to_string(),
             LiteralType::NilLiteral => String::from("nil"),
-            LiteralType::Callable(c) => panic!("TODO : implement to_string for Callable"),
+            LiteralType::Callable(c) => match c {
+                Callable::Clock(_) => "<fn clock>".to_owned(),
+                Callable::Function(f) => format!("<{}>", f.declaration.name.get_lexeme()),
+            },
         }
     }
 }

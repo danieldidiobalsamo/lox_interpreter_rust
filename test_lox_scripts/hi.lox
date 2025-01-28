@@ -1,0 +1,5 @@
+fun hi(){
+	print "hi";
+}
+
+hi();

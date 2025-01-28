@@ -10,8 +10,8 @@ use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
 pub struct Interpreter {
-    env: Rc<RefCell<Environment>>,
-    globals: Rc<RefCell<Environment>>,
+    pub env: Rc<RefCell<Environment>>,
+    pub globals: Rc<RefCell<Environment>>,
     pub write_log: bool,
     log_file: String,
 }
@@ -42,7 +42,11 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute_block(&mut self, statements: &[Box<Stmt>], env: Environment) -> Result<(), String> {
+    pub fn execute_block(
+        &mut self,
+        statements: &[Box<Stmt>],
+        env: Environment,
+    ) -> Result<(), String> {
         let previous = Rc::clone(&self.env);
 
         self.env = Rc::new(RefCell::new(env));
@@ -229,15 +233,13 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
 
         let mut arguments = Vec::new();
 
-        if let Some(args) = &expr.arguments {
-            for arg in args {
-                arguments.push(self.evaluate(arg)?);
-            }
+        for arg in &expr.arguments {
+            arguments.push(self.evaluate(arg)?);
         }
 
         if let LiteralType::Callable(c) = callee {
             match c {
-                Callable::Function(f) => {
+                Callable::Function(mut f) => {
                     if arguments.len() != f.arity() {
                         Err(format!(
                             "{} Expected {} arguments but got {}.",
@@ -246,10 +248,10 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                             arguments.len()
                         ))
                     } else {
-                        Ok(f.call(&self, &arguments))
+                        f.call(self, &arguments)
                     }
                 }
-                Callable::Clock(c) => Ok(c.call(&self, &arguments)),
+                Callable::Clock(mut c) => c.call(self, &arguments),
             }
         } else {
             Err(String::from("Can only call functions and classes."))
@@ -316,6 +318,18 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
 
             cond = self.evaluate(&stmt.condition)?;
         }
+
+        Ok(())
+    }
+
+    fn visit_function(&mut self, stmt: &crate::stmt::Function) -> Result<(), String> {
+        let function = Callable::Function(Function {
+            declaration: Box::new(stmt.clone()),
+        });
+
+        self.env
+            .borrow_mut()
+            .define(&stmt.name.get_lexeme(), &LiteralType::Callable(function));
 
         Ok(())
     }
@@ -849,5 +863,23 @@ mod tests {
             .interpret_code("for(var i=0; i < 5; i=i+1){print i;}")
             .unwrap();
         check_results(&file_name, &vec!["0", "1", "2", "3", "4"]);
+    }
+
+    #[test]
+    fn hi() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/hi.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["hi"]);
+    }
+
+    #[test]
+    fn function_hello_world() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/hello_world.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["Hi, Dear User!"]);
     }
 }
