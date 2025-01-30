@@ -20,15 +20,22 @@ pub trait LoxCallable {
     fn arity(&self) -> usize;
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum Callable {
     Clock(Clock),
     Function(Function),
 }
 
+impl PartialEq for Callable {
+    fn eq(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
     pub declaration: Box<stmt::Function>,
+    pub closure: Rc<RefCell<Environment>>,
 }
 
 impl LoxCallable for Function {
@@ -37,7 +44,7 @@ impl LoxCallable for Function {
         interpreter: &mut Interpreter,
         arguments: &[LiteralType],
     ) -> Result<LiteralType, Exit> {
-        let mut env = Environment::new(Some(Rc::new(RefCell::clone(&interpreter.globals))));
+        let mut env = Environment::new(Some(Rc::clone(&self.closure)));
 
         for i in 0..self.declaration.params.len() {
             env.borrow_mut()

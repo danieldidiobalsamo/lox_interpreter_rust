@@ -54,9 +54,9 @@ impl Interpreter {
         self.env = Rc::new(RefCell::new(env.clone()));
 
         for statement in statements {
-            if let Err(e) = self.execute(statement) {
+            if let Err(exit) = self.execute(statement) {
                 self.env = previous;
-                return Err(e);
+                return Err(exit);
             }
         }
 
@@ -336,6 +336,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
     fn visit_function(&mut self, stmt: &crate::stmt::Function) -> Result<(), Exit> {
         let function = Callable::Function(Function {
             declaration: Box::new(stmt.clone()),
+            closure: Rc::clone(&self.env),
         });
 
         self.env
@@ -941,5 +942,14 @@ mod tests {
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
         check_results(&file_name, &vec!["55"]);
+    }
+
+    #[test]
+    fn closures() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/closures.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["1", "2"]);
     }
 }
