@@ -6,6 +6,7 @@ use std::{env, process};
 pub mod environment;
 pub mod expr;
 pub mod interpreter;
+pub mod lox_callable;
 pub mod parser;
 pub mod scanner;
 pub mod stmt;
