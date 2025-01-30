@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
     expr::Expr,
     token::{LiteralType, Token},
@@ -15,17 +17,17 @@ pub enum Stmt {
     Return(Return),
 }
 
-impl ToString for Stmt {
-    fn to_string(&self) -> String {
+impl Display for Stmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Stmt::Expression(_) => "Expression".to_owned(),
-            Stmt::Print(_) => "Print".to_owned(),
-            Stmt::Var(_) => "Var".to_owned(),
-            Stmt::Block(_) => "Block".to_owned(),
-            Stmt::If(_) => "If".to_owned(),
-            Stmt::While(_) => "While".to_owned(),
-            Stmt::Function(_) => "Function".to_owned(),
-            Stmt::Return(_) => "Return".to_owned(),
+            Stmt::Expression(_) => write!(f, "Expression"),
+            Stmt::Print(_) => write!(f, "Print"),
+            Stmt::Var(_) => write!(f, "Var"),
+            Stmt::Block(_) => write!(f, "Block"),
+            Stmt::If(_) => write!(f, "If"),
+            Stmt::While(_) => write!(f, "While"),
+            Stmt::Function(_) => write!(f, "Function"),
+            Stmt::Return(_) => write!(f, "Return"),
         }
     }
 }
@@ -50,8 +52,8 @@ pub trait StmtVisitor<T> {
 impl Stmt {
     pub fn accept<T>(&self, visitor: &mut dyn StmtVisitor<T>) -> T {
         match self {
-            Stmt::Expression(expression) => visitor.visit_expression(&expression),
-            Stmt::Print(print) => visitor.visit_print(&print),
+            Stmt::Expression(expression) => visitor.visit_expression(expression),
+            Stmt::Print(print) => visitor.visit_print(print),
             Stmt::Var(var) => visitor.visit_var(var),
             Stmt::Block(block) => visitor.visit_block(block),
             Stmt::If(condition) => visitor.visit_if(condition),

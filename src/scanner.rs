@@ -27,7 +27,7 @@ impl<'a> Scanner<'a> {
             start_lexeme: 0,
             current: 0,
             error_log: String::new(),
-            last: source.as_bytes().len(),
+            last: source.len(),
             keywords: HashMap::from([
                 ("and", TokenType::And),
                 ("class", TokenType::Class),

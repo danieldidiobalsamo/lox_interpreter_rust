@@ -240,25 +240,23 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
             match c {
                 Callable::Function(mut f) => {
                     if arguments.len() != f.arity() {
-                        return Err(format!(
+                        Err(format!(
                             "{} Expected {} arguments but got {}.",
-                            expr.paren.to_string(),
+                            expr.paren,
                             f.arity(),
                             arguments.len()
-                        ));
+                        ))
                     } else {
-                        return Ok(f.call(self, &arguments).map_err(|e| match e {
+                        Ok(f.call(self, &arguments).map_err(|e| match e {
                             Exit::Return(l) => l.to_string(),
                             Exit::Error(s) => s,
-                        })?);
+                        })?)
                     }
                 }
-                Callable::Clock(mut c) => {
-                    return Ok(c.call(self, &arguments).map_err(|e| match e {
-                        Exit::Return(l) => l.to_string(),
-                        Exit::Error(s) => s,
-                    })?);
-                }
+                Callable::Clock(mut c) => Ok(c.call(self, &arguments).map_err(|e| match e {
+                    Exit::Return(l) => l.to_string(),
+                    Exit::Error(s) => s,
+                })?),
             }
         } else {
             Err(String::from("Can only call functions and classes."))
@@ -276,14 +274,15 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
     fn visit_print(&mut self, expr: &crate::stmt::Print) -> Result<(), Exit> {
         let value = self.evaluate(&expr.expression).map_err(Exit::Error)?;
 
-        println!("{}", value.to_string());
+        println!("{}", value);
 
         if self.write_log {
             let mut file = OpenOptions::new()
                 .append(true)
                 .open(&self.log_file)
                 .unwrap();
-            file.write((value.to_string() + "\n").as_bytes()).unwrap();
+            file.write_all((value.to_string() + "\n").as_bytes())
+                .unwrap();
         }
 
         Ok(())
@@ -315,7 +314,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
         if self.is_truthy(&cond) {
             self.execute(&stmt.then_branch)?;
         } else if let Some(ref else_branch) = *stmt.else_branch {
-            self.execute(&else_branch)?;
+            self.execute(else_branch)?;
         }
 
         Ok(())

@@ -51,13 +51,13 @@ impl LoxCallable for Function {
                 .define(&self.declaration.params[i].get_lexeme(), &arguments[i]);
         }
 
-        return match interpreter.execute_block(&self.declaration.body, env) {
+        match interpreter.execute_block(&self.declaration.body, env) {
             Ok(_) => Ok(LiteralType::NilLiteral),
             Err(e) => match e {
                 Exit::Return(literal_type) => Ok(literal_type),
                 Exit::Error(s) => Err(Exit::Error(s)),
             },
-        };
+        }
     }
 
     fn arity(&self) -> usize {
