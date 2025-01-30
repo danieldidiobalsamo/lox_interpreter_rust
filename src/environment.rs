@@ -2,19 +2,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::token::{LiteralType, Token};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Environment {
     values: HashMap<String, LiteralType>,
     enclosing: Option<Rc<RefCell<Environment>>>,
-}
-
-impl Default for Environment {
-    fn default() -> Self {
-        Self {
-            values: HashMap::new(),
-            enclosing: None,
-        }
-    }
 }
 
 impl Environment {

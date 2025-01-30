@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::lox_callable::Callable;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -47,48 +49,48 @@ pub enum TokenType {
     Eof,
 }
 
-impl ToString for TokenType {
-    fn to_string(&self) -> String {
-        match *self {
-            TokenType::LeftParen => String::from("LeftParen"),
-            TokenType::RightParen => String::from("RightParen"),
-            TokenType::LeftBrace => String::from("LeftBrace"),
-            TokenType::RightBrace => String::from("RightBrace"),
-            TokenType::Comma => String::from("Comma"),
-            TokenType::Dot => String::from("Dot"),
-            TokenType::Minus => String::from("Minus"),
-            TokenType::Plus => String::from("Plus"),
-            TokenType::Semicolon => String::from("Semicolon"),
-            TokenType::Slash => String::from("Slash"),
-            TokenType::Star => String::from("Star"),
-            TokenType::Bang => String::from("Bang"),
-            TokenType::BangEqual => String::from("BangEqual"),
-            TokenType::Equal => String::from("Equal"),
-            TokenType::EqualEqual => String::from("EqualEqual"),
-            TokenType::Greater => String::from("Greater"),
-            TokenType::GreaterEqual => String::from("GreaterEqual"),
-            TokenType::Less => String::from("Less"),
-            TokenType::LessEqual => String::from("LessEqual"),
-            TokenType::Identifier => String::from("Identifier"),
-            TokenType::String => String::from("String"),
-            TokenType::Number => String::from("Number"),
-            TokenType::And => String::from("And"),
-            TokenType::Class => String::from("Class"),
-            TokenType::Else => String::from("Else"),
-            TokenType::False => String::from("False"),
-            TokenType::Fun => String::from("Fun"),
-            TokenType::For => String::from("For"),
-            TokenType::If => String::from("If"),
-            TokenType::Nil => String::from("Nil"),
-            TokenType::Or => String::from("Or"),
-            TokenType::Print => String::from("Print"),
-            TokenType::Return => String::from("Return"),
-            TokenType::Super => String::from("Super"),
-            TokenType::This => String::from("This"),
-            TokenType::True => String::from("True"),
-            TokenType::Var => String::from("Var"),
-            TokenType::While => String::from("While"),
-            TokenType::Eof => String::from("Eof"),
+impl Display for TokenType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenType::LeftParen => write!(f, "LeftParen"),
+            TokenType::RightParen => write!(f, "RightParen"),
+            TokenType::LeftBrace => write!(f, "LeftBrace"),
+            TokenType::RightBrace => write!(f, "RightBrace"),
+            TokenType::Comma => write!(f, "Comma"),
+            TokenType::Dot => write!(f, "Dot"),
+            TokenType::Minus => write!(f, "Minus"),
+            TokenType::Plus => write!(f, "Plus"),
+            TokenType::Semicolon => write!(f, "Semicolon"),
+            TokenType::Slash => write!(f, "Slash"),
+            TokenType::Star => write!(f, "Star"),
+            TokenType::Bang => write!(f, "Bang"),
+            TokenType::BangEqual => write!(f, "BangEqual"),
+            TokenType::Equal => write!(f, "Equal"),
+            TokenType::EqualEqual => write!(f, "EqualEqual"),
+            TokenType::Greater => write!(f, "Greater"),
+            TokenType::GreaterEqual => write!(f, "GreaterEqual"),
+            TokenType::Less => write!(f, "Less"),
+            TokenType::LessEqual => write!(f, "LessEqual"),
+            TokenType::Identifier => write!(f, "Identifier"),
+            TokenType::String => write!(f, "String"),
+            TokenType::Number => write!(f, "Number"),
+            TokenType::And => write!(f, "And"),
+            TokenType::Class => write!(f, "Class"),
+            TokenType::Else => write!(f, "Else"),
+            TokenType::False => write!(f, "False"),
+            TokenType::Fun => write!(f, "Fun"),
+            TokenType::For => write!(f, "For"),
+            TokenType::If => write!(f, "If"),
+            TokenType::Nil => write!(f, "Nil"),
+            TokenType::Or => write!(f, "Or"),
+            TokenType::Print => write!(f, "Print"),
+            TokenType::Return => write!(f, "Return"),
+            TokenType::Super => write!(f, "Super"),
+            TokenType::This => write!(f, "This"),
+            TokenType::True => write!(f, "True"),
+            TokenType::Var => write!(f, "Var"),
+            TokenType::While => write!(f, "While"),
+            TokenType::Eof => write!(f, "Eof"),
         }
     }
 }
@@ -120,18 +122,22 @@ impl LiteralType {
     }
 }
 
-impl ToString for LiteralType {
-    fn to_string(&self) -> String {
-        match self {
-            LiteralType::StringLiteral(l) => String::from(l),
-            LiteralType::FloatLiteral(l) => l.to_string(),
-            LiteralType::BoolLiteral(l) => l.to_string(),
-            LiteralType::NilLiteral => String::from("nil"),
-            LiteralType::Callable(c) => match c {
-                Callable::Clock(_) => "<fn clock>".to_owned(),
-                Callable::Function(f) => format!("<{}>", f.declaration.name.get_lexeme()),
-            },
-        }
+impl Display for LiteralType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LiteralType::StringLiteral(l) => String::from(l),
+                LiteralType::FloatLiteral(l) => l.to_string(),
+                LiteralType::BoolLiteral(l) => l.to_string(),
+                LiteralType::NilLiteral => String::from("nil"),
+                LiteralType::Callable(c) => match c {
+                    Callable::Clock(_) => "<fn clock>".to_owned(),
+                    Callable::Function(f) => format!("<fn {}>", f.declaration.name.get_lexeme()),
+                },
+            }
+        )
     }
 }
 
@@ -159,20 +165,14 @@ impl Token {
     }
 }
 
-impl ToString for Token {
-    fn to_string(&self) -> String {
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Simple(token_type, lexeme, line) => {
-                format!("{} {} {}", token_type.to_string(), lexeme, line)
+                write!(f, "{} {} {}", token_type, lexeme, line)
             }
             Token::Literal(token_type, lexeme, literal, line) => {
-                format!(
-                    "{} {} {} {}",
-                    token_type.to_string(),
-                    lexeme,
-                    literal.to_string(),
-                    line
-                )
+                write!(f, "{} {} {} {}", token_type, lexeme, literal, line)
             }
         }
     }

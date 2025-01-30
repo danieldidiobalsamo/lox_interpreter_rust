@@ -45,10 +45,10 @@ impl Parser {
             };
         }
 
-        return self.statement();
+        self.statement()
     }
     fn function(&mut self) -> Result<Stmt, String> {
-        let name = self.consume(TokenType::Identifier, &format!("Expect function name."))?;
+        let name = self.consume(TokenType::Identifier, "Expect function name.")?;
         let _ = self.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
 
         let mut params = Vec::new();
@@ -139,7 +139,7 @@ impl Parser {
         let _ = self.consume(TokenType::Semicolon, "Expect ';' after return value")?;
 
         Ok(Stmt::Return(Return {
-            keyword: keyword,
+            keyword,
             value: Box::new(Some(value)),
         }))
     }
@@ -230,11 +230,11 @@ impl Parser {
             None
         };
 
-        return Ok(Stmt::If(If {
+        Ok(Stmt::If(If {
             condition: Box::new(condition),
             then_branch: Box::new(then_branch),
             else_branch: Box::new(else_branch),
-        }));
+        }))
     }
 
     fn block(&mut self) -> Result<Vec<Box<Stmt>>, String> {
@@ -253,18 +253,18 @@ impl Parser {
         let val = self.expression()?;
         let _ = self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
 
-        return Ok(Stmt::Print(Print {
+        Ok(Stmt::Print(Print {
             expression: Box::new(val),
-        }));
+        }))
     }
 
     fn expression_statement(&mut self) -> Result<Stmt, String> {
         let expr = self.expression()?;
         let _ = self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
 
-        return Ok(Stmt::Expression(Expression {
+        Ok(Stmt::Expression(Expression {
             expression: Box::new(expr),
-        }));
+        }))
     }
 
     fn expression(&mut self) -> Result<Expr, String> {

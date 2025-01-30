@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::token::{LiteralType, Token};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -10,6 +12,21 @@ pub enum Expr {
     Assign(Assign),
     Logical(Logical),
     Call(Call),
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Expr::Literal(_) => write!(f, "Literal"),
+            Expr::Binary(_) => write!(f, "Binary"),
+            Expr::Unary(_) => write!(f, "Unary"),
+            Expr::Grouping(_) => write!(f, "Grouping"),
+            Expr::Variable(_) => write!(f, "Variable"),
+            Expr::Assign(_) => write!(f, "Assign"),
+            Expr::Logical(_) => write!(f, "Logical"),
+            Expr::Call(_) => write!(f, "Call"),
+        }
+    }
 }
 
 impl Expr {
