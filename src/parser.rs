@@ -1,6 +1,6 @@
 use crate::{
     expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Unary, Variable},
-    stmt::{self, Block, Expression, If, Print, Stmt, Var, While},
+    stmt::{self, Block, Expression, If, Print, Return, Stmt, Var, While},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -108,6 +108,10 @@ impl Parser {
             return self.print_statement();
         }
 
+        if self.match_token_type(&[TokenType::Return]) {
+            return self.return_statement();
+        }
+
         if self.match_token_type(&[TokenType::While]) {
             return self.while_statement();
         }
@@ -119,6 +123,25 @@ impl Parser {
         }
 
         self.expression_statement()
+    }
+
+    fn return_statement(&mut self) -> Result<Stmt, String> {
+        let keyword = self.previous().clone();
+
+        let value = if !self.check(&TokenType::Semicolon) {
+            self.expression()?
+        } else {
+            Expr::Literal(Literal {
+                value: LiteralType::NilLiteral,
+            })
+        };
+
+        let _ = self.consume(TokenType::Semicolon, "Expect ';' after return value")?;
+
+        Ok(Stmt::Return(Return {
+            keyword: keyword,
+            value: Box::new(Some(value)),
+        }))
     }
 
     fn for_statement(&mut self) -> Result<Stmt, String> {

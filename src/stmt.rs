@@ -1,4 +1,7 @@
-use crate::{expr::Expr, token::Token};
+use crate::{
+    expr::Expr,
+    token::{LiteralType, Token},
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
@@ -9,6 +12,28 @@ pub enum Stmt {
     If(If),
     While(While),
     Function(Function),
+    Return(Return),
+}
+
+impl ToString for Stmt {
+    fn to_string(&self) -> String {
+        match self {
+            Stmt::Expression(_) => "Expression".to_owned(),
+            Stmt::Print(_) => "Print".to_owned(),
+            Stmt::Var(_) => "Var".to_owned(),
+            Stmt::Block(_) => "Block".to_owned(),
+            Stmt::If(_) => "If".to_owned(),
+            Stmt::While(_) => "While".to_owned(),
+            Stmt::Function(_) => "Function".to_owned(),
+            Stmt::Return(_) => "Return".to_owned(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Exit {
+    Return(LiteralType),
+    Error(String),
 }
 
 pub trait StmtVisitor<T> {
@@ -19,6 +44,7 @@ pub trait StmtVisitor<T> {
     fn visit_if(&mut self, expr: &If) -> T;
     fn visit_while(&mut self, expr: &While) -> T;
     fn visit_function(&mut self, expr: &Function) -> T;
+    fn visit_return(&mut self, expr: &Return) -> T;
 }
 
 impl Stmt {
@@ -31,6 +57,7 @@ impl Stmt {
             Stmt::If(condition) => visitor.visit_if(condition),
             Stmt::While(while_loop) => visitor.visit_while(while_loop),
             Stmt::Function(function) => visitor.visit_function(function),
+            Stmt::Return(return_stmt) => visitor.visit_return(return_stmt),
         }
     }
 }
@@ -74,4 +101,10 @@ pub struct Function {
     pub name: Token,
     pub params: Vec<Token>,
     pub body: Vec<Box<Stmt>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Return {
+    pub keyword: Token,
+    pub value: Box<Option<Expr>>,
 }

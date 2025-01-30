@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::environment::Environment;
 use crate::expr::{AstVisitor, Expr, Variable};
 use crate::lox_callable::{Callable, Clock, Function, LoxCallable};
-use crate::stmt::{Stmt, StmtVisitor};
+use crate::stmt::{Exit, Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
 pub struct Interpreter {
@@ -18,7 +18,7 @@ pub struct Interpreter {
 
 impl Default for Interpreter {
     fn default() -> Self {
-        let mut globals = Rc::new(RefCell::new(Environment::default()));
+        let globals = Rc::new(RefCell::new(Environment::default()));
 
         globals
             .borrow_mut()
@@ -36,7 +36,9 @@ impl Default for Interpreter {
 impl Interpreter {
     pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
         for statement in statements {
-            self.execute(statement)?;
+            if let Err(Exit::Error(e)) = self.execute(statement) {
+                return Err(e);
+            }
         }
 
         Ok(())
@@ -46,19 +48,16 @@ impl Interpreter {
         &mut self,
         statements: &[Box<Stmt>],
         env: Environment,
-    ) -> Result<(), String> {
+    ) -> Result<(), Exit> {
         let previous = Rc::clone(&self.env);
 
-        self.env = Rc::new(RefCell::new(env));
+        self.env = Rc::new(RefCell::new(env.clone()));
 
         for statement in statements {
-            match self.execute(statement) {
-                Ok(_) => (),
-                Err(e) => {
-                    self.env = previous;
-                    return Err(e);
-                }
-            };
+            if let Err(e) = self.execute(statement) {
+                self.env = previous;
+                return Err(e);
+            }
         }
 
         self.env = previous;
@@ -66,7 +65,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute(&mut self, statement: &Stmt) -> Result<(), String> {
+    fn execute(&mut self, statement: &Stmt) -> Result<(), Exit> {
         statement.accept(self)
     }
 
@@ -241,17 +240,25 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
             match c {
                 Callable::Function(mut f) => {
                     if arguments.len() != f.arity() {
-                        Err(format!(
+                        return Err(format!(
                             "{} Expected {} arguments but got {}.",
                             expr.paren.to_string(),
                             f.arity(),
                             arguments.len()
-                        ))
+                        ));
                     } else {
-                        f.call(self, &arguments)
+                        return Ok(f.call(self, &arguments).map_err(|e| match e {
+                            Exit::Return(l) => l.to_string(),
+                            Exit::Error(s) => s,
+                        })?);
                     }
                 }
-                Callable::Clock(mut c) => c.call(self, &arguments),
+                Callable::Clock(mut c) => {
+                    return Ok(c.call(self, &arguments).map_err(|e| match e {
+                        Exit::Return(l) => l.to_string(),
+                        Exit::Error(s) => s,
+                    })?);
+                }
             }
         } else {
             Err(String::from("Can only call functions and classes."))
@@ -259,15 +266,16 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     }
 }
 
-impl StmtVisitor<Result<(), String>> for Interpreter {
-    fn visit_expression(&mut self, expr: &crate::stmt::Expression) -> Result<(), String> {
-        self.evaluate(&expr.expression)?;
+impl StmtVisitor<Result<(), Exit>> for Interpreter {
+    fn visit_expression(&mut self, expr: &crate::stmt::Expression) -> Result<(), Exit> {
+        let _ = self.evaluate(&expr.expression).map_err(Exit::Error)?;
 
         Ok(())
     }
 
-    fn visit_print(&mut self, expr: &crate::stmt::Print) -> Result<(), String> {
-        let value = self.evaluate(&expr.expression)?;
+    fn visit_print(&mut self, expr: &crate::stmt::Print) -> Result<(), Exit> {
+        let value = self.evaluate(&expr.expression).map_err(Exit::Error)?;
+
         println!("{}", value.to_string());
 
         if self.write_log {
@@ -281,9 +289,9 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
         Ok(())
     }
 
-    fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), String> {
+    fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), Exit> {
         let value = match *stmt.initializer {
-            Some(ref init) => self.evaluate(init)?,
+            Some(ref init) => self.evaluate(init).map_err(Exit::Error)?,
             None => LiteralType::NilLiteral,
         };
 
@@ -294,15 +302,17 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
         Ok(())
     }
 
-    fn visit_block(&mut self, stmt: &crate::stmt::Block) -> Result<(), String> {
-        self.execute_block(&stmt.statements, Environment::new(Some(self.env.clone())))?;
-        Ok(())
+    fn visit_block(&mut self, stmt: &crate::stmt::Block) -> Result<(), Exit> {
+        self.execute_block(
+            &stmt.statements,
+            Environment::new(Some(Rc::clone(&self.env))),
+        )
     }
 
-    fn visit_if(&mut self, stmt: &crate::stmt::If) -> Result<(), String> {
-        let cond = &self.evaluate(&stmt.condition)?;
+    fn visit_if(&mut self, stmt: &crate::stmt::If) -> Result<(), Exit> {
+        let cond = self.evaluate(&stmt.condition).map_err(Exit::Error)?;
 
-        if self.is_truthy(cond) {
+        if self.is_truthy(&cond) {
             self.execute(&stmt.then_branch)?;
         } else if let Some(ref else_branch) = *stmt.else_branch {
             self.execute(&else_branch)?;
@@ -311,18 +321,19 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
         Ok(())
     }
 
-    fn visit_while(&mut self, stmt: &crate::stmt::While) -> Result<(), String> {
-        let mut cond = self.evaluate(&stmt.condition)?;
-        while self.is_truthy(&cond) {
-            self.execute(&stmt.body)?;
+    fn visit_while(&mut self, stmt: &crate::stmt::While) -> Result<(), Exit> {
+        let mut cond = self.evaluate(&stmt.condition).map_err(Exit::Error)?;
 
-            cond = self.evaluate(&stmt.condition)?;
+        while self.is_truthy(&cond) {
+            let _ = self.execute(&stmt.body);
+
+            cond = self.evaluate(&stmt.condition).map_err(Exit::Error)?;
         }
 
         Ok(())
     }
 
-    fn visit_function(&mut self, stmt: &crate::stmt::Function) -> Result<(), String> {
+    fn visit_function(&mut self, stmt: &crate::stmt::Function) -> Result<(), Exit> {
         let function = Callable::Function(Function {
             declaration: Box::new(stmt.clone()),
         });
@@ -330,6 +341,18 @@ impl StmtVisitor<Result<(), String>> for Interpreter {
         self.env
             .borrow_mut()
             .define(&stmt.name.get_lexeme(), &LiteralType::Callable(function));
+
+        Ok(())
+    }
+
+    fn visit_return(&mut self, stmt: &crate::stmt::Return) -> Result<(), Exit> {
+        if let Some(ref val) = *stmt.value {
+            let evaluated = self.evaluate(val).map_err(Exit::Error)?;
+
+            // return Err to go to where the function call began, instead of propagating through Ok()
+            // and continue the execution
+            return Err(Exit::Return(evaluated));
+        }
 
         Ok(())
     }
@@ -396,12 +419,20 @@ mod tests {
     pub fn check_results(log_filename: &str, expected: &[&str]) {
         let content = fs::read_to_string(&log_filename).unwrap();
 
-        if content.is_empty() {
-            assert!(expected == vec![""]);
+        let results = content.lines().collect::<Vec<&str>>();
+        let n = results.len();
+
+        if n != expected.len() {
+            assert!(
+                false,
+                "number of results isn't good : expected {}, have {}; log: {log_filename}",
+                expected.len(),
+                n,
+            );
         }
 
-        for (i, line) in content.lines().enumerate() {
-            assert_eq!(line, expected[i]);
+        for i in 0..n {
+            assert_eq!(results[i], expected[i]);
         }
     }
 
@@ -763,9 +794,9 @@ mod tests {
         let file_name = setup
             .lock()
             .unwrap()
-            .interpret_code("var a=1;{a=a+1;}print a;")
+            .interpret_code("var a=1;{a=a+1;print a;}print a;")
             .unwrap();
-        check_results(&file_name, &vec!["2"]);
+        check_results(&file_name, &vec!["2", "2"]);
 
         let file_name = setup
             .lock()
@@ -798,7 +829,7 @@ mod tests {
             .unwrap()
             .interpret_code("var a=1; if (a == 2){print \"if\";}")
             .unwrap();
-        check_results(&file_name, &vec![""]);
+        check_results(&file_name, &vec![]);
 
         let file_name = setup
             .lock()
@@ -881,5 +912,34 @@ mod tests {
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
         check_results(&file_name, &vec!["Hi, Dear User!"]);
+    }
+
+    #[test]
+    fn function_add_pair() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/simple.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["4"]);
+    }
+
+    #[test]
+    fn unreachable_code() {
+        let setup = Setup::new();
+        let file_name = setup
+            .lock()
+            .unwrap()
+            .interpret_code("fun test(){return;print \"unreachable\";}")
+            .unwrap();
+        check_results(&file_name, &vec![]);
+    }
+
+    #[test]
+    fn function_fibonacci() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/fibonacci.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["55"]);
     }
 }

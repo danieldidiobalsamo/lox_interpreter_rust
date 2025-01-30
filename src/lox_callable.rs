@@ -1,7 +1,7 @@
 use crate::{
     environment::Environment,
     interpreter::Interpreter,
-    stmt::{self},
+    stmt::{self, Exit},
     token::LiteralType,
 };
 use std::{
@@ -16,7 +16,7 @@ pub trait LoxCallable {
         &mut self,
         interpreter: &mut Interpreter,
         arguments: &[LiteralType],
-    ) -> Result<LiteralType, String>;
+    ) -> Result<LiteralType, Exit>;
     fn arity(&self) -> usize;
 }
 
@@ -36,7 +36,7 @@ impl LoxCallable for Function {
         &mut self,
         interpreter: &mut Interpreter,
         arguments: &[LiteralType],
-    ) -> Result<LiteralType, String> {
+    ) -> Result<LiteralType, Exit> {
         let mut env = Environment::new(Some(Rc::new(RefCell::clone(&interpreter.globals))));
 
         for i in 0..self.declaration.params.len() {
@@ -44,9 +44,13 @@ impl LoxCallable for Function {
                 .define(&self.declaration.params[i].get_lexeme(), &arguments[i]);
         }
 
-        interpreter.execute_block(&self.declaration.body, env)?;
-
-        Ok(LiteralType::NilLiteral)
+        return match interpreter.execute_block(&self.declaration.body, env) {
+            Ok(_) => Ok(LiteralType::NilLiteral),
+            Err(e) => match e {
+                Exit::Return(literal_type) => Ok(literal_type),
+                Exit::Error(s) => Err(Exit::Error(s)),
+            },
+        };
     }
 
     fn arity(&self) -> usize {
@@ -62,9 +66,12 @@ impl LoxCallable for Clock {
         &mut self,
         _interpreter: &mut Interpreter,
         _arguments: &[LiteralType],
-    ) -> Result<LiteralType, String> {
+    ) -> Result<LiteralType, Exit> {
         let now = SystemTime::now();
-        let since_epoch = now.duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?;
+        let since_epoch = now
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| Exit::Error(e.to_string()))?;
+
         Ok(LiteralType::FloatLiteral(
             since_epoch.as_millis() as f64 / 1000.0,
         ))
