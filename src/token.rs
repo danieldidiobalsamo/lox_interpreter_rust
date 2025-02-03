@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::lox_callable::Callable;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TokenType {
     LeftParen,
     RightParen,

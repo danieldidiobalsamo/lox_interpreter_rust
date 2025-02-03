@@ -1,8 +1,11 @@
 use std::fmt::Display;
 
-use crate::token::{LiteralType, Token};
+use uuid::Uuid;
 
-#[derive(Debug, PartialEq, Clone)]
+use crate::token::{LiteralType, Token};
+use std::hash::{Hash, Hasher};
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Literal),
     Binary(Binary),
@@ -13,6 +16,29 @@ pub enum Expr {
     Logical(Logical),
     Call(Call),
 }
+
+impl Expr {
+    pub fn get_uuid(&self) -> Uuid {
+        match self {
+            Expr::Literal(expr) => expr.uuid,
+            Expr::Binary(expr) => expr.uuid,
+            Expr::Unary(expr) => expr.uuid,
+            Expr::Grouping(expr) => expr.uuid,
+            Expr::Variable(expr) => expr.uuid,
+            Expr::Assign(expr) => expr.uuid,
+            Expr::Logical(expr) => expr.uuid,
+            Expr::Call(expr) => expr.uuid,
+        }
+    }
+}
+
+impl Hash for Expr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get_uuid().hash(state);
+    }
+}
+
+impl Eq for Expr {}
 
 impl Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -57,11 +83,13 @@ pub trait AstVisitor<T> {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Literal {
+    pub uuid: Uuid,
     pub value: LiteralType,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Binary {
+    pub uuid: Uuid,
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
@@ -69,28 +97,33 @@ pub struct Binary {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Grouping {
+    pub uuid: Uuid,
     pub expression: Box<Expr>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Unary {
+    pub uuid: Uuid,
     pub operator: Token,
     pub right: Box<Expr>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Variable {
+    pub uuid: Uuid,
     pub name: Token,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assign {
+    pub uuid: Uuid,
     pub name: Token,
     pub value: Box<Expr>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Logical {
+    pub uuid: Uuid,
     pub left: Box<Expr>,
     pub operator: Token,
     pub right: Box<Expr>,
@@ -98,6 +131,7 @@ pub struct Logical {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Call {
+    pub uuid: Uuid,
     pub callee: Box<Expr>,
     pub paren: Token,
     pub arguments: Vec<Box<Expr>>,
