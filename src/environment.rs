@@ -49,6 +49,37 @@ impl Environment {
             },
         }
     }
+
+    pub fn get_at(&self, distance: usize, name: &Token) -> Result<LiteralType, String> {
+        if distance == 0 {
+            return self.get(name);
+        } else {
+            if let Some(e) = self.enclosing.as_ref() {
+                return e.borrow().get_at(distance - 1, name);
+            } else {
+                return Err(format!("no enclosing env containing {}", name.get_lexeme()));
+            }
+        }
+    }
+
+    pub fn assign_at(
+        &mut self,
+        distance: usize,
+        name: &Token,
+        value: &LiteralType,
+    ) -> Result<(), String> {
+        if distance == 0 {
+            self.define(&name.get_lexeme(), &value);
+        } else {
+            if let Some(e) = self.enclosing.as_ref() {
+                e.borrow_mut().assign_at(distance - 1, &name, &value)?;
+            } else {
+                return Err(format!("no enclosing env containing {value}"));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

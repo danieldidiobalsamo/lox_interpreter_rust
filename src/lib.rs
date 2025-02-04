@@ -8,12 +8,14 @@ pub mod expr;
 pub mod interpreter;
 pub mod lox_callable;
 pub mod parser;
+pub mod resolver;
 pub mod scanner;
 pub mod stmt;
 pub mod token;
 
 use interpreter::Interpreter;
 use parser::Parser;
+use resolver::Resolver;
 
 use crate::scanner::Scanner;
 
@@ -79,6 +81,12 @@ impl Lox {
                 let mut parser = Parser::new(tokens);
                 match parser.parse() {
                     Ok(statements) => {
+                        let mut resolver = Resolver::new(&mut self.interpreter);
+                        if let Err(err) = resolver.resolve(&statements) {
+                            eprintln!("{err}");
+                            process::exit(70); // C sysexits.h EX_SOFTWARE internal software error
+                        }
+
                         match self.interpreter.interpret(&statements) {
                             Ok(_) => (),
                             Err(err) => {

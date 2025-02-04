@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::rc::Rc;
@@ -9,9 +10,11 @@ use crate::lox_callable::{Callable, Clock, Function, LoxCallable};
 use crate::stmt::{Exit, Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
+#[derive(Debug, Clone)]
 pub struct Interpreter {
     pub env: Rc<RefCell<Environment>>,
     pub globals: Rc<RefCell<Environment>>,
+    locals: HashMap<Expr, usize>,
     pub write_log: bool,
     log_file: String,
 }
@@ -26,6 +29,7 @@ impl Default for Interpreter {
 
         Self {
             globals: Rc::clone(&globals),
+            locals: HashMap::new(),
             env: Rc::clone(&globals),
             write_log: false,
             log_file: "unit_tests.log".to_owned(),
@@ -71,6 +75,10 @@ impl Interpreter {
 
     fn evaluate(&mut self, expr: &Expr) -> Result<LiteralType, String> {
         expr.accept(self)
+    }
+
+    pub fn resolve(&mut self, expr: &Expr, depth: usize) {
+        self.locals.insert(expr.clone(), depth);
     }
 
     fn is_truthy(&self, literal_type: &LiteralType) -> bool {
@@ -119,6 +127,13 @@ impl Interpreter {
             self.check_string_operand(left, operator)?,
             self.check_string_operand(right, operator)?,
         ))
+    }
+
+    fn look_up_variable(&mut self, name: &Token, expr: &Expr) -> Result<LiteralType, String> {
+        match self.locals.get(expr) {
+            Some(distance) => self.env.borrow().get_at(*distance, &name),
+            None => self.globals.borrow().get(name),
+        }
     }
 }
 
@@ -196,12 +211,19 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     }
 
     fn visit_variable_expr(&mut self, expr: &Variable) -> Result<LiteralType, String> {
-        return self.env.borrow().get(&expr.name);
+        self.look_up_variable(&expr.name, &Expr::Variable(expr.clone()))
     }
 
     fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<LiteralType, String> {
         let value = self.evaluate(&expr.value)?;
-        self.env.borrow_mut().assign(&expr.name, &value)?;
+
+        if let Some(distance) = self.locals.get(&Expr::Assign(expr.clone())) {
+            self.env
+                .borrow_mut()
+                .assign_at(*distance, &expr.name, &value)?;
+        } else {
+            self.globals.borrow_mut().assign(&expr.name, &value)?;
+        }
 
         Ok(value)
     }
@@ -367,8 +389,11 @@ mod tests {
 
     use super::*;
 
-    use crate::parser::Parser;
     use crate::scanner::Scanner;
+    use crate::{
+        parser::Parser,
+        resolver::{self, Resolver},
+    };
 
     struct Setup {
         id: usize,
@@ -410,6 +435,10 @@ mod tests {
             let _ = File::create(&name).unwrap();
 
             let statements = self.get_statements(code);
+
+            let mut resolver = Resolver::new(&mut i);
+            resolver.resolve(&statements)?;
+
             i.interpret(&statements)?;
 
             Ok(name)
@@ -950,5 +979,46 @@ mod tests {
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
         check_results(&file_name, &vec!["1", "2"]);
+    }
+
+    #[test]
+    fn closures_scope() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/scope.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["global", "global"]);
+    }
+
+    #[test]
+    fn forbidden_ref_var_in_its_initializer() {
+        let setup = Setup::new();
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a=\"outer\";{var a=a;}")
+            .is_err());
+    }
+
+    #[test]
+    fn same_var_name_same_local_scope() {
+        // same variable name in the same local scope (global would be ok) is an error
+        let setup = Setup::new();
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("fun bad(){var a=1;var a=2;}")
+            .is_err());
+    }
+
+    #[test]
+    fn invalid_return() {
+        // return outside a function declaration is an error
+        let setup = Setup::new();
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("return \"hello\";")
+            .is_err());
     }
 }
