@@ -95,6 +95,7 @@ impl LoxCallable for Clock {
 #[derive(Debug, PartialEq, Clone)]
 pub struct LoxClass {
     pub name: String,
+    pub methods: HashMap<String, Function>,
 }
 
 impl LoxCallable for LoxClass {
@@ -118,6 +119,12 @@ impl LoxCallable for LoxClass {
     }
 }
 
+impl LoxClass {
+    pub fn find_method(&self, name: &str) -> Option<&Function> {
+        self.methods.get(name)
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct LoxInstance {
     pub class: Rc<RefCell<LoxClass>>,
@@ -126,11 +133,16 @@ pub struct LoxInstance {
 
 impl LoxInstance {
     pub fn get(&self, name: &Token) -> Result<LiteralType, String> {
-        match self.fields.get(&name.get_lexeme()) {
-            Some(val) => Ok(val.clone()),
+        if let Some(value) = self.fields.get(&name.get_lexeme()) {
+            return Ok(value.clone());
+        }
+
+        match self.class.borrow().find_method(&name.get_lexeme()) {
+            Some(method) => Ok(LiteralType::Callable(Callable::Function(method.clone()))),
             None => Err(format!("Undefined property: {}", name.get_lexeme())),
         }
     }
+
     pub fn set(&mut self, name: &Token, value: &LiteralType) {
         // lox allows creating new fields on instances, if the key doesn't exists then it's created.
 

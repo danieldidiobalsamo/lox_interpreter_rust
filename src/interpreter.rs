@@ -414,13 +414,29 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
             .borrow_mut()
             .define(&stmt.name.get_lexeme(), &LiteralType::NilLiteral);
 
+        let mut methods = HashMap::new();
+
+        for method in &stmt.methods {
+            if let Stmt::Function(ref m) = **method {
+                let function = Function {
+                    declaration: Box::new(m.clone()),
+                    closure: Rc::clone(&self.env),
+                };
+
+                methods.insert(m.name.get_lexeme(), function);
+            }
+        }
+
         let class = Callable::LoxClass(LoxClass {
             name: stmt.name.get_lexeme(),
+            methods,
         });
 
-        self.env
+        let _ = self
+            .env
             .borrow_mut()
-            .assign(&stmt.name, &LiteralType::Callable(class));
+            .assign(&stmt.name, &LiteralType::Callable(class))
+            .map_err(Exit::Error)?;
 
         Ok(())
     }
@@ -1074,6 +1090,27 @@ mod tests {
         let code = fs::read_to_string("./test_lox_scripts/simple_class.lox").unwrap();
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
-        check_results(&file_name, &vec!["Player", "Player instance", "nobody"]);
+        check_results(
+            &file_name,
+            &vec!["Player", "Player instance", "nobody", "I'm taking 'book'"],
+        );
+    }
+
+    #[test]
+    fn add_method_class() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/add_method_class.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["I'm taking 'book'"]);
+    }
+
+    #[test]
+    fn refer_to_method_class() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/refer_to_method_class.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["hello world!"]);
     }
 }

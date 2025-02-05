@@ -12,6 +12,7 @@ enum FunctionType {
     #[default]
     None,
     Function,
+    Method,
 }
 
 pub struct Resolver<'a> {
@@ -262,9 +263,15 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
         Ok(())
     }
 
-    fn visit_class(&mut self, expr: &crate::stmt::Class) -> Result<(), String> {
-        self.declare(&expr.name)?;
-        self.define(&expr.name);
+    fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), String> {
+        self.declare(&stmt.name)?;
+        self.define(&stmt.name);
+
+        for method in &stmt.methods {
+            if let Stmt::Function(ref m) = **method {
+                self.resolve_function(&m, FunctionType::Method)?;
+            }
+        }
 
         Ok(())
     }
