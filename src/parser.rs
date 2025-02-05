@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use crate::{
-    expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Unary, Variable},
+    expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Set, Unary, Variable},
     stmt::{self, Block, Class, Expression, If, Print, Return, Stmt, Var, While},
     token::{LiteralType, Token, TokenType},
 };
@@ -307,6 +307,13 @@ impl Parser {
                     name: var.name,
                     value: Box::new(value),
                 }));
+            } else if let Expr::Get(get) = expr {
+                return Ok(Expr::Set(Set {
+                    uuid: Uuid::new_v4(),
+                    object: get.object,
+                    name: get.name,
+                    value: Box::new(value),
+                }));
             } else {
                 return Err("Invalid assignment target.".to_owned());
             }
@@ -449,6 +456,17 @@ impl Parser {
         loop {
             if self.match_token_type(&[TokenType::LeftParen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.match_token_type(&[TokenType::Dot]) {
+                let name = self.consume(
+                    TokenType::Identifier,
+                    "Expect property identifier after '.'",
+                )?;
+
+                expr = Expr::Get(crate::expr::Get {
+                    uuid: Uuid::new_v4(),
+                    object: Box::new(expr),
+                    name,
+                });
             } else {
                 break Ok(expr);
             }

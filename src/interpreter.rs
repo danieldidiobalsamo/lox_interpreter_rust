@@ -5,7 +5,7 @@ use std::io::Write;
 use std::rc::Rc;
 
 use crate::environment::Environment;
-use crate::expr::{AstVisitor, Expr, Variable};
+use crate::expr::{AstVisitor, Expr, Literal, Variable};
 use crate::lox_callable::{Callable, Clock, Function, LoxCallable, LoxClass};
 use crate::stmt::{Exit, Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
@@ -290,6 +290,29 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         } else {
             Err(String::from("Can only call functions and classes."))
         }
+    }
+
+    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<LiteralType, String> {
+        let object = self.evaluate(&expr.object)?;
+
+        if let LiteralType::Callable(Callable::LoxInstance(object)) = object {
+            return object.borrow().get(&expr.name);
+        }
+
+        Err(format!("{} : Only instances have properties.", expr.name))
+    }
+
+    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<LiteralType, String> {
+        let object = self.evaluate(&expr.object)?;
+
+        if let LiteralType::Callable(Callable::LoxInstance(instance)) = object {
+            let value = self.evaluate(&expr.value)?;
+            instance.borrow_mut().set(&expr.name, &value);
+
+            return Ok(value);
+        }
+
+        Err(format!("{} : Only instances have fields.", expr.name))
     }
 }
 
@@ -1051,6 +1074,6 @@ mod tests {
         let code = fs::read_to_string("./test_lox_scripts/simple_class.lox").unwrap();
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
-        check_results(&file_name, &vec!["Player", "Player instance"]);
+        check_results(&file_name, &vec!["Player", "Player instance", "nobody"]);
     }
 }

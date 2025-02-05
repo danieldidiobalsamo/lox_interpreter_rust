@@ -178,6 +178,19 @@ impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
 
         Ok(())
     }
+
+    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<(), String> {
+        self.resolve_expr(&expr.object)?;
+
+        Ok(())
+    }
+
+    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<(), String> {
+        self.resolve_expr(&expr.value)?;
+        self.resolve_expr(&expr.object)?;
+
+        Ok(())
+    }
 }
 
 impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {

@@ -2,11 +2,12 @@ use crate::{
     environment::Environment,
     interpreter::Interpreter,
     stmt::{self, Exit},
-    token::LiteralType,
+    token::{LiteralType, Token},
 };
 use std::{
     borrow::BorrowMut,
     cell::RefCell,
+    collections::HashMap,
     rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -25,7 +26,7 @@ pub enum Callable {
     Clock(Clock),
     Function(Function),
     LoxClass(LoxClass),
-    LoxInstance(LoxInstance),
+    LoxInstance(Rc<RefCell<LoxInstance>>),
 }
 
 impl PartialEq for Callable {
@@ -102,9 +103,14 @@ impl LoxCallable for LoxClass {
         _interpreter: &mut Interpreter,
         _arguments: &[LiteralType],
     ) -> Result<LiteralType, Exit> {
-        Ok(LiteralType::Callable(Callable::LoxInstance(LoxInstance {
-            class: Rc::new(RefCell::new(self.clone())),
-        })))
+        let instance = Rc::new(RefCell::new(LoxInstance {
+            class: Rc::new(self.clone().into()),
+            fields: HashMap::new(),
+        }));
+
+        Ok(LiteralType::Callable(Callable::LoxInstance(Rc::clone(
+            &instance,
+        ))))
     }
 
     fn arity(&self) -> usize {
@@ -115,4 +121,19 @@ impl LoxCallable for LoxClass {
 #[derive(Debug, PartialEq, Clone)]
 pub struct LoxInstance {
     pub class: Rc<RefCell<LoxClass>>,
+    pub fields: HashMap<String, LiteralType>,
+}
+
+impl LoxInstance {
+    pub fn get(&self, name: &Token) -> Result<LiteralType, String> {
+        match self.fields.get(&name.get_lexeme()) {
+            Some(val) => Ok(val.clone()),
+            None => Err(format!("Undefined property: {}", name.get_lexeme())),
+        }
+    }
+    pub fn set(&mut self, name: &Token, value: &LiteralType) {
+        // lox allows creating new fields on instances, if the key doesn't exists then it's created.
+
+        self.fields.insert(name.get_lexeme(), value.clone());
+    }
 }

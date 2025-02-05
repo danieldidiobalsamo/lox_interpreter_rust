@@ -137,7 +137,7 @@ impl Display for LiteralType {
                     Callable::Function(f) => format!("<fn {}>", f.declaration.name.get_lexeme()),
                     Callable::LoxClass(lox_class) => lox_class.name.clone(),
                     Callable::LoxInstance(lox_instance) =>
-                        format!("{} instance", lox_instance.class.borrow().name),
+                        format!("{} instance", lox_instance.borrow().class.borrow().name),
                 },
             }
         )
