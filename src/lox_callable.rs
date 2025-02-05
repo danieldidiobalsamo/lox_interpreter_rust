@@ -24,6 +24,8 @@ pub trait LoxCallable {
 pub enum Callable {
     Clock(Clock),
     Function(Function),
+    LoxClass(LoxClass),
+    LoxInstance(LoxInstance),
 }
 
 impl PartialEq for Callable {
@@ -87,4 +89,30 @@ impl LoxCallable for Clock {
     fn arity(&self) -> usize {
         0
     }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LoxClass {
+    pub name: String,
+}
+
+impl LoxCallable for LoxClass {
+    fn call(
+        &mut self,
+        _interpreter: &mut Interpreter,
+        _arguments: &[LiteralType],
+    ) -> Result<LiteralType, Exit> {
+        Ok(LiteralType::Callable(Callable::LoxInstance(LoxInstance {
+            class: Rc::new(RefCell::new(self.clone())),
+        })))
+    }
+
+    fn arity(&self) -> usize {
+        0
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LoxInstance {
+    pub class: Rc<RefCell<LoxClass>>,
 }

@@ -248,4 +248,11 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
 
         Ok(())
     }
+
+    fn visit_class(&mut self, expr: &crate::stmt::Class) -> Result<(), String> {
+        self.declare(&expr.name)?;
+        self.define(&expr.name);
+
+        Ok(())
+    }
 }

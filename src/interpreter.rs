@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use crate::environment::Environment;
 use crate::expr::{AstVisitor, Expr, Variable};
-use crate::lox_callable::{Callable, Clock, Function, LoxCallable};
+use crate::lox_callable::{Callable, Clock, Function, LoxCallable, LoxClass};
 use crate::stmt::{Exit, Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
@@ -279,6 +279,13 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                     Exit::Return(l) => l.to_string(),
                     Exit::Error(s) => s,
                 })?),
+                Callable::LoxClass(mut lox_class) => {
+                    Ok(lox_class.call(self, &vec![]).map_err(|e| match e {
+                        Exit::Return(l) => l.to_string(),
+                        Exit::Error(s) => s,
+                    })?)
+                }
+                _ => Err(String::from("Can only call functions and classes.")),
             }
         } else {
             Err(String::from("Can only call functions and classes."))
@@ -375,6 +382,22 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
             // and continue the execution
             return Err(Exit::Return(evaluated));
         }
+
+        Ok(())
+    }
+
+    fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), Exit> {
+        self.env
+            .borrow_mut()
+            .define(&stmt.name.get_lexeme(), &LiteralType::NilLiteral);
+
+        let class = Callable::LoxClass(LoxClass {
+            name: stmt.name.get_lexeme(),
+        });
+
+        self.env
+            .borrow_mut()
+            .assign(&stmt.name, &LiteralType::Callable(class));
 
         Ok(())
     }
@@ -1020,5 +1043,14 @@ mod tests {
             .unwrap()
             .interpret_code("return \"hello\";")
             .is_err());
+    }
+
+    #[test]
+    fn simple_class() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/simple_class.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["Player", "Player instance"]);
     }
 }

@@ -135,6 +135,9 @@ impl Display for LiteralType {
                 LiteralType::Callable(c) => match c {
                     Callable::Clock(_) => "<fn clock>".to_owned(),
                     Callable::Function(f) => format!("<fn {}>", f.declaration.name.get_lexeme()),
+                    Callable::LoxClass(lox_class) => lox_class.name.clone(),
+                    Callable::LoxInstance(lox_instance) =>
+                        format!("{} instance", lox_instance.class.borrow().name),
                 },
             }
         )
