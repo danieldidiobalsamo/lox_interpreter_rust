@@ -135,6 +135,9 @@ impl Display for LiteralType {
                 LiteralType::Callable(c) => match c {
                     Callable::Clock(_) => "<fn clock>".to_owned(),
                     Callable::Function(f) => format!("<fn {}>", f.declaration.name.get_lexeme()),
+                    Callable::LoxClass(lox_class) => lox_class.name.clone(),
+                    Callable::LoxInstance(lox_instance) =>
+                        format!("{} instance", lox_instance.borrow().class.borrow().name),
                 },
             }
         )
@@ -161,6 +164,13 @@ impl Token {
         match self {
             Token::Simple(token_type, _, _) => token_type,
             Token::Literal(token_type, _, _, _) => token_type,
+        }
+    }
+
+    pub fn get_line(&self) -> usize {
+        match self {
+            Token::Simple(_, _, line) => *line,
+            Token::Literal(_, _, _, line) => *line,
         }
     }
 }

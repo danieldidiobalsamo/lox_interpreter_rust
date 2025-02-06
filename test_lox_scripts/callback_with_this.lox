@@ -1,0 +1,11 @@
+class Player{
+	getCallback(){
+		fun localFunction(){
+			print this;
+		}
+		return localFunction;
+	}
+}
+
+var callback = Player().getCallback();
+callback();

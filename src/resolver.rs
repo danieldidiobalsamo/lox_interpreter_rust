@@ -12,12 +12,22 @@ enum FunctionType {
     #[default]
     None,
     Function,
+    Method,
+    Initializer,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+enum ClassType {
+    #[default]
+    None,
+    Class,
 }
 
 pub struct Resolver<'a> {
     interpreter: &'a mut Interpreter,
     scopes: Vec<HashMap<String, bool>>,
     current_function: FunctionType,
+    current_class: ClassType,
 }
 
 impl<'a> Resolver<'a> {
@@ -26,6 +36,7 @@ impl<'a> Resolver<'a> {
             interpreter,
             scopes: Vec::new(),
             current_function: FunctionType::None,
+            current_class: ClassType::None,
         }
     }
 
@@ -178,6 +189,28 @@ impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
 
         Ok(())
     }
+
+    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<(), String> {
+        self.resolve_expr(&expr.object)?;
+
+        Ok(())
+    }
+
+    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<(), String> {
+        self.resolve_expr(&expr.value)?;
+        self.resolve_expr(&expr.object)?;
+
+        Ok(())
+    }
+
+    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<(), String> {
+        if self.current_class == ClassType::None {
+            return Err("Can't use 'this' outside of a class".to_owned());
+        }
+
+        self.resolve_local(&Expr::This(expr.clone()), &expr.keyword);
+        Ok(())
+    }
 }
 
 impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
@@ -243,8 +276,47 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
         }
 
         if let Some(ref value) = *stmt.value {
+            if self.current_function == FunctionType::Initializer {
+                if let Expr::Literal(value_expr) = value {
+                    if value_expr.value != LiteralType::NilLiteral {
+                        return Err("Can't return a value from an initializer".to_owned());
+                    }
+                }
+            }
+
             self.resolve_expr(&value)?;
         }
+
+        Ok(())
+    }
+
+    fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), String> {
+        let enclosing_class = self.current_class.clone();
+        self.current_class = ClassType::Class;
+
+        self.declare(&stmt.name)?;
+        self.define(&stmt.name);
+
+        self.begin_scope();
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert("this".to_owned(), true);
+        }
+
+        for method in &stmt.methods {
+            if let Stmt::Function(ref m) = **method {
+                let declaration = if m.name.get_lexeme() == "init" {
+                    FunctionType::Initializer
+                } else {
+                    FunctionType::Method
+                };
+
+                self.resolve_function(&m, declaration)?;
+            }
+        }
+
+        self.end_scope();
+
+        self.current_class = enclosing_class;
 
         Ok(())
     }

@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    expr::Expr,
+    expr::{Expr, Variable},
     token::{LiteralType, Token},
 };
 
@@ -15,6 +15,7 @@ pub enum Stmt {
     While(While),
     Function(Function),
     Return(Return),
+    Class(Class),
 }
 
 impl Display for Stmt {
@@ -28,6 +29,7 @@ impl Display for Stmt {
             Stmt::While(_) => write!(f, "While"),
             Stmt::Function(_) => write!(f, "Function"),
             Stmt::Return(_) => write!(f, "Return"),
+            Stmt::Class(_) => write!(f, "Class"),
         }
     }
 }
@@ -47,6 +49,7 @@ pub trait StmtVisitor<T> {
     fn visit_while(&mut self, expr: &While) -> T;
     fn visit_function(&mut self, expr: &Function) -> T;
     fn visit_return(&mut self, expr: &Return) -> T;
+    fn visit_class(&mut self, expr: &Class) -> T;
 }
 
 impl Stmt {
@@ -60,6 +63,7 @@ impl Stmt {
             Stmt::While(while_loop) => visitor.visit_while(while_loop),
             Stmt::Function(function) => visitor.visit_function(function),
             Stmt::Return(return_stmt) => visitor.visit_return(return_stmt),
+            Stmt::Class(class_stmt) => visitor.visit_class(class_stmt),
         }
     }
 }
@@ -109,4 +113,10 @@ pub struct Function {
 pub struct Return {
     pub keyword: Token,
     pub value: Box<Option<Expr>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Class {
+    pub name: Token,
+    pub methods: Vec<Box<Stmt>>,
 }

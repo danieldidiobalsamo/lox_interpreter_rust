@@ -1,0 +1,9 @@
+class Player{
+	hello(){
+		print "hello " + this.name;
+	}
+}
+
+var player = Player();
+player.name = "nobody";
+player.hello();

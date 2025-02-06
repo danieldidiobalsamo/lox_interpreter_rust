@@ -15,6 +15,9 @@ pub enum Expr {
     Assign(Assign),
     Logical(Logical),
     Call(Call),
+    Get(Get),
+    Set(Set),
+    This(This),
 }
 
 impl Expr {
@@ -28,6 +31,9 @@ impl Expr {
             Expr::Assign(expr) => expr.uuid,
             Expr::Logical(expr) => expr.uuid,
             Expr::Call(expr) => expr.uuid,
+            Expr::Get(expr) => expr.uuid,
+            Expr::Set(expr) => expr.uuid,
+            Expr::This(expr) => expr.uuid,
         }
     }
 }
@@ -51,6 +57,9 @@ impl Display for Expr {
             Expr::Assign(_) => write!(f, "Assign"),
             Expr::Logical(_) => write!(f, "Logical"),
             Expr::Call(_) => write!(f, "Call"),
+            Expr::Get(_) => write!(f, "Get"),
+            Expr::Set(_) => write!(f, "Set"),
+            Expr::This(_) => write!(f, "Set"),
         }
     }
 }
@@ -66,6 +75,9 @@ impl Expr {
             Expr::Assign(assign) => visitor.visit_assign_expr(assign),
             Expr::Logical(logical) => visitor.visit_logical_expr(logical),
             Expr::Call(call) => visitor.visit_call_expr(call),
+            Expr::Get(get) => visitor.visit_get_expr(get),
+            Expr::Set(set) => visitor.visit_set_expr(set),
+            Expr::This(this) => visitor.visit_this_expr(this),
         }
     }
 }
@@ -79,6 +91,9 @@ pub trait AstVisitor<T> {
     fn visit_assign_expr(&mut self, expr: &Assign) -> T;
     fn visit_logical_expr(&mut self, expr: &Logical) -> T;
     fn visit_call_expr(&mut self, expr: &Call) -> T;
+    fn visit_get_expr(&mut self, expr: &Get) -> T;
+    fn visit_set_expr(&mut self, expr: &Set) -> T;
+    fn visit_this_expr(&mut self, expr: &This) -> T;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -135,4 +150,25 @@ pub struct Call {
     pub callee: Box<Expr>,
     pub paren: Token,
     pub arguments: Vec<Box<Expr>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Get {
+    pub uuid: Uuid,
+    pub object: Box<Expr>,
+    pub name: Token,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Set {
+    pub uuid: Uuid,
+    pub object: Box<Expr>,
+    pub name: Token,
+    pub value: Box<Expr>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct This {
+    pub uuid: Uuid,
+    pub keyword: Token,
 }

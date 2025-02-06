@@ -2,11 +2,12 @@ use crate::{
     environment::Environment,
     interpreter::Interpreter,
     stmt::{self, Exit},
-    token::LiteralType,
+    token::{LiteralType, Token},
 };
 use std::{
     borrow::BorrowMut,
     cell::RefCell,
+    collections::HashMap,
     rc::Rc,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -24,6 +25,8 @@ pub trait LoxCallable {
 pub enum Callable {
     Clock(Clock),
     Function(Function),
+    LoxClass(LoxClass),
+    LoxInstance(Rc<RefCell<LoxInstance>>),
 }
 
 impl PartialEq for Callable {
@@ -36,6 +39,24 @@ impl PartialEq for Callable {
 pub struct Function {
     pub declaration: Box<stmt::Function>,
     pub closure: Rc<RefCell<Environment>>,
+    pub is_initializer: bool,
+}
+
+impl Function {
+    fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> Self {
+        let mut env = Environment::new(Some(Rc::clone(&self.closure)));
+
+        env.borrow_mut().define(
+            "this",
+            &LiteralType::Callable(Callable::LoxInstance(instance)),
+        );
+
+        Self {
+            declaration: self.declaration.clone(),
+            closure: Rc::new(RefCell::new(env.clone())),
+            is_initializer: self.is_initializer,
+        }
+    }
 }
 
 impl LoxCallable for Function {
@@ -51,13 +72,34 @@ impl LoxCallable for Function {
                 .define(&self.declaration.params[i].get_lexeme(), &arguments[i]);
         }
 
+        let return_this = || {
+            return self
+                .closure
+                .borrow()
+                .get_at_str(0, "this", self.declaration.name.get_line())
+                .map_err(Exit::Error);
+        };
+
         match interpreter.execute_block(&self.declaration.body, env) {
-            Ok(_) => Ok(LiteralType::NilLiteral),
-            Err(e) => match e {
-                Exit::Return(literal_type) => Ok(literal_type),
-                Exit::Error(s) => Err(Exit::Error(s)),
-            },
+            Ok(_) => (),
+            Err(e) => {
+                return match e {
+                    Exit::Return(literal_type) => {
+                        if self.is_initializer {
+                            return return_this();
+                        }
+                        Ok(literal_type)
+                    }
+                    Exit::Error(s) => Err(Exit::Error(s)),
+                }
+            }
         }
+
+        if self.is_initializer {
+            return return_this();
+        }
+
+        Ok(LiteralType::NilLiteral)
     }
 
     fn arity(&self) -> usize {
@@ -86,5 +128,75 @@ impl LoxCallable for Clock {
 
     fn arity(&self) -> usize {
         0
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LoxClass {
+    pub name: String,
+    pub methods: HashMap<String, Function>,
+}
+
+impl LoxCallable for LoxClass {
+    fn call(
+        &mut self,
+        interpreter: &mut Interpreter,
+        arguments: &[LiteralType],
+    ) -> Result<LiteralType, Exit> {
+        let instance = Rc::new(RefCell::new(LoxInstance {
+            class: Rc::new(self.clone().into()),
+            fields: HashMap::new(),
+        }));
+
+        if let Some(initializer) = self.find_method("init") {
+            let _ = initializer
+                .bind(Rc::clone(&instance))
+                .call(interpreter, arguments)?;
+        }
+
+        Ok(LiteralType::Callable(Callable::LoxInstance(Rc::clone(
+            &instance,
+        ))))
+    }
+
+    fn arity(&self) -> usize {
+        if let Some(initializer) = self.find_method("init") {
+            initializer.arity()
+        } else {
+            0
+        }
+    }
+}
+
+impl LoxClass {
+    pub fn find_method(&self, name: &str) -> Option<&Function> {
+        self.methods.get(name)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LoxInstance {
+    pub class: Rc<RefCell<LoxClass>>,
+    pub fields: HashMap<String, LiteralType>,
+}
+
+impl LoxInstance {
+    pub fn get(&self, name: &Token) -> Result<LiteralType, String> {
+        if let Some(value) = self.fields.get(&name.get_lexeme()) {
+            return Ok(value.clone());
+        }
+
+        match self.class.borrow().find_method(&name.get_lexeme()) {
+            Some(method) => Ok(LiteralType::Callable(Callable::Function(
+                method.bind(Rc::new(RefCell::new(self.clone()))),
+            ))),
+            None => Err(format!("Undefined property: {}", name.get_lexeme())),
+        }
+    }
+
+    pub fn set(&mut self, name: &Token, value: &LiteralType) {
+        // lox allows creating new fields on instances, if the key doesn't exists then it's created.
+
+        self.fields.insert(name.get_lexeme(), value.clone());
     }
 }

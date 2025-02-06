@@ -1,0 +1,9 @@
+class Player{
+	hello(){
+		print "hello world!";
+	}
+}
+
+var player = Player();
+var m = player.hello;
+m();

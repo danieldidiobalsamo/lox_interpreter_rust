@@ -1,8 +1,8 @@
 use uuid::Uuid;
 
 use crate::{
-    expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Unary, Variable},
-    stmt::{self, Block, Expression, If, Print, Return, Stmt, Var, While},
+    expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Set, This, Unary, Variable},
+    stmt::{self, Block, Class, Expression, If, Print, Return, Stmt, Var, While},
     token::{LiteralType, Token, TokenType},
 };
 
@@ -33,6 +33,10 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> Result<Stmt, String> {
+        if self.match_token_type(&[TokenType::Class]) {
+            return self.class_declaration();
+        }
+
         if self.match_token_type(&[TokenType::Fun]) {
             return self.function();
         }
@@ -49,6 +53,22 @@ impl Parser {
 
         self.statement()
     }
+
+    fn class_declaration(&mut self) -> Result<Stmt, String> {
+        let name = self.consume(TokenType::Identifier, "Expect class name.")?;
+        let _ = self.consume(TokenType::LeftBrace, "Expect '{' before class body.")?;
+
+        let mut methods = Vec::new();
+
+        while !self.check(&TokenType::RightBrace) && !self.is_at_end() {
+            methods.push(Box::new(self.function()?));
+        }
+
+        let _ = self.consume(TokenType::RightBrace, "Expect '}' after class body.")?;
+
+        Ok(Stmt::Class(Class { name, methods }))
+    }
+
     fn function(&mut self) -> Result<Stmt, String> {
         let name = self.consume(TokenType::Identifier, "Expect function name.")?;
         let _ = self.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
@@ -287,6 +307,13 @@ impl Parser {
                     name: var.name,
                     value: Box::new(value),
                 }));
+            } else if let Expr::Get(get) = expr {
+                return Ok(Expr::Set(Set {
+                    uuid: Uuid::new_v4(),
+                    object: get.object,
+                    name: get.name,
+                    value: Box::new(value),
+                }));
             } else {
                 return Err("Invalid assignment target.".to_owned());
             }
@@ -429,6 +456,17 @@ impl Parser {
         loop {
             if self.match_token_type(&[TokenType::LeftParen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.match_token_type(&[TokenType::Dot]) {
+                let name = self.consume(
+                    TokenType::Identifier,
+                    "Expect property identifier after '.'",
+                )?;
+
+                expr = Expr::Get(crate::expr::Get {
+                    uuid: Uuid::new_v4(),
+                    object: Box::new(expr),
+                    name,
+                });
             } else {
                 break Ok(expr);
             }
@@ -493,14 +531,10 @@ impl Parser {
             }
         }
 
-        if self.match_token_type(&[TokenType::LeftParen]) {
-            let expr = self.expression()?;
-
-            let _ = self.consume(TokenType::RightParen, "Expect ')' after expression.");
-
-            return Ok(Expr::Grouping(Grouping {
+        if self.match_token_type(&[TokenType::This]) {
+            return Ok(Expr::This(This {
                 uuid: Uuid::new_v4(),
-                expression: Box::new(expr),
+                keyword: self.previous().clone(),
             }));
         }
 
@@ -508,6 +542,17 @@ impl Parser {
             return Ok(Expr::Variable(Variable {
                 uuid: Uuid::new_v4(),
                 name: self.previous().clone(),
+            }));
+        }
+
+        if self.match_token_type(&[TokenType::LeftParen]) {
+            let expr = self.expression()?;
+
+            let _ = self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
+
+            return Ok(Expr::Grouping(Grouping {
+                uuid: Uuid::new_v4(),
+                expression: Box::new(expr),
             }));
         }
 

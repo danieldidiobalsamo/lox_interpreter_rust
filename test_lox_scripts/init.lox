@@ -1,0 +1,8 @@
+class Player{
+	init(){
+		print this;
+	}
+}
+
+var p = Player();
+print p.init();

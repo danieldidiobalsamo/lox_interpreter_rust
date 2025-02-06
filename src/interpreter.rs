@@ -5,8 +5,8 @@ use std::io::Write;
 use std::rc::Rc;
 
 use crate::environment::Environment;
-use crate::expr::{AstVisitor, Expr, Variable};
-use crate::lox_callable::{Callable, Clock, Function, LoxCallable};
+use crate::expr::{AstVisitor, Expr, Literal, Variable};
+use crate::lox_callable::{Callable, Clock, Function, LoxCallable, LoxClass};
 use crate::stmt::{Exit, Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
@@ -279,10 +279,44 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                     Exit::Return(l) => l.to_string(),
                     Exit::Error(s) => s,
                 })?),
+                Callable::LoxClass(mut lox_class) => {
+                    Ok(lox_class.call(self, &vec![]).map_err(|e| match e {
+                        Exit::Return(l) => l.to_string(),
+                        Exit::Error(s) => s,
+                    })?)
+                }
+                _ => Err(String::from("Can only call functions and classes.")),
             }
         } else {
             Err(String::from("Can only call functions and classes."))
         }
+    }
+
+    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<LiteralType, String> {
+        let object = self.evaluate(&expr.object)?;
+
+        if let LiteralType::Callable(Callable::LoxInstance(object)) = object {
+            return object.borrow().get(&expr.name);
+        }
+
+        Err(format!("{} : Only instances have properties.", expr.name))
+    }
+
+    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<LiteralType, String> {
+        let object = self.evaluate(&expr.object)?;
+
+        if let LiteralType::Callable(Callable::LoxInstance(instance)) = object {
+            let value = self.evaluate(&expr.value)?;
+            instance.borrow_mut().set(&expr.name, &value);
+
+            return Ok(value);
+        }
+
+        Err(format!("{} : Only instances have fields.", expr.name))
+    }
+
+    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<LiteralType, String> {
+        self.look_up_variable(&expr.keyword, &Expr::This(expr.clone()))
     }
 }
 
@@ -358,6 +392,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
         let function = Callable::Function(Function {
             declaration: Box::new(stmt.clone()),
             closure: Rc::clone(&self.env),
+            is_initializer: false,
         });
 
         self.env
@@ -375,6 +410,39 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
             // and continue the execution
             return Err(Exit::Return(evaluated));
         }
+
+        Ok(())
+    }
+
+    fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), Exit> {
+        self.env
+            .borrow_mut()
+            .define(&stmt.name.get_lexeme(), &LiteralType::NilLiteral);
+
+        let mut methods = HashMap::new();
+
+        for method in &stmt.methods {
+            if let Stmt::Function(ref m) = **method {
+                let function = Function {
+                    declaration: Box::new(m.clone()),
+                    closure: Rc::clone(&self.env),
+                    is_initializer: m.name.get_lexeme() == "init",
+                };
+
+                methods.insert(m.name.get_lexeme(), function);
+            }
+        }
+
+        let class = Callable::LoxClass(LoxClass {
+            name: stmt.name.get_lexeme(),
+            methods,
+        });
+
+        let _ = self
+            .env
+            .borrow_mut()
+            .assign(&stmt.name, &LiteralType::Callable(class))
+            .map_err(Exit::Error)?;
 
         Ok(())
     }
@@ -1020,5 +1088,103 @@ mod tests {
             .unwrap()
             .interpret_code("return \"hello\";")
             .is_err());
+    }
+
+    #[test]
+    fn simple_class() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/simple_class.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(
+            &file_name,
+            &vec!["Player", "Player instance", "nobody", "I'm taking 'book'"],
+        );
+    }
+
+    #[test]
+    fn add_method_class() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/add_method_class.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["I'm taking 'book'"]);
+    }
+
+    #[test]
+    fn refer_to_method_class() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/refer_to_method_class.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["hello world!"]);
+    }
+
+    #[test]
+    fn this() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/this.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["hello nobody"]);
+    }
+
+    #[test]
+    fn callback_with_this() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/callback_with_this.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["Player instance"]);
+    }
+
+    #[test]
+    fn this_outside_method() {
+        // 'this' outside a method is an error
+        let setup = Setup::new();
+        assert!(setup.lock().unwrap().interpret_code("print this;").is_err());
+    }
+
+    #[test]
+    fn this_outside_class_method() {
+        // 'this' outside in a function (not method) is an error
+        let setup = Setup::new();
+
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("fun bad(){print this;}")
+            .is_err());
+    }
+
+    #[test]
+    fn class_init() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/init.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(
+            &file_name,
+            &vec!["Player instance", "Player instance", "Player instance"],
+        );
+    }
+
+    #[test]
+    fn return_value_within_init() {
+        // return a value within a constructor is an error
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/return_value_within_init.lox").unwrap();
+
+        assert!(setup.lock().unwrap().interpret_code(&code).is_err());
+    }
+
+    #[test]
+    fn return_within_init() {
+        // return without a value inside a constructor is valid
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/return_within_init.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["Player instance"]);
     }
 }

@@ -1,0 +1,19 @@
+class Player{
+	hello(){
+		print "hello world!";
+	}
+
+	take(item){
+		print "I'm taking '" + item + "'";
+	}
+}
+
+print Player;
+
+var player1 = Player();
+print player1;
+
+player1.name = "nobody";
+print player1.name;
+
+player1.take("book");

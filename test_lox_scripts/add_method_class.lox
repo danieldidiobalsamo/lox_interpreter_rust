@@ -1,0 +1,13 @@
+class Player{
+	hello(){
+		print "hello world!";
+	}
+}
+
+fun take(item){
+	print "I'm taking '" + item + "'";
+}
+
+var player = Player();
+player.function = take;
+player.function("book");
