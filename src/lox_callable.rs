@@ -39,6 +39,7 @@ impl PartialEq for Callable {
 pub struct Function {
     pub declaration: Box<stmt::Function>,
     pub closure: Rc<RefCell<Environment>>,
+    pub is_initializer: bool,
 }
 
 impl Function {
@@ -53,6 +54,7 @@ impl Function {
         Self {
             declaration: self.declaration.clone(),
             closure: Rc::new(RefCell::new(env.clone())),
+            is_initializer: self.is_initializer,
         }
     }
 }
@@ -70,13 +72,34 @@ impl LoxCallable for Function {
                 .define(&self.declaration.params[i].get_lexeme(), &arguments[i]);
         }
 
+        let return_this = || {
+            return self
+                .closure
+                .borrow()
+                .get_at_str(0, "this", self.declaration.name.get_line())
+                .map_err(Exit::Error);
+        };
+
         match interpreter.execute_block(&self.declaration.body, env) {
-            Ok(_) => Ok(LiteralType::NilLiteral),
-            Err(e) => match e {
-                Exit::Return(literal_type) => Ok(literal_type),
-                Exit::Error(s) => Err(Exit::Error(s)),
-            },
+            Ok(_) => (),
+            Err(e) => {
+                return match e {
+                    Exit::Return(literal_type) => {
+                        if self.is_initializer {
+                            return return_this();
+                        }
+                        Ok(literal_type)
+                    }
+                    Exit::Error(s) => Err(Exit::Error(s)),
+                }
+            }
         }
+
+        if self.is_initializer {
+            return return_this();
+        }
+
+        Ok(LiteralType::NilLiteral)
     }
 
     fn arity(&self) -> usize {
@@ -117,13 +140,19 @@ pub struct LoxClass {
 impl LoxCallable for LoxClass {
     fn call(
         &mut self,
-        _interpreter: &mut Interpreter,
-        _arguments: &[LiteralType],
+        interpreter: &mut Interpreter,
+        arguments: &[LiteralType],
     ) -> Result<LiteralType, Exit> {
         let instance = Rc::new(RefCell::new(LoxInstance {
             class: Rc::new(self.clone().into()),
             fields: HashMap::new(),
         }));
+
+        if let Some(initializer) = self.find_method("init") {
+            let _ = initializer
+                .bind(Rc::clone(&instance))
+                .call(interpreter, arguments)?;
+        }
 
         Ok(LiteralType::Callable(Callable::LoxInstance(Rc::clone(
             &instance,
@@ -131,7 +160,11 @@ impl LoxCallable for LoxClass {
     }
 
     fn arity(&self) -> usize {
-        0
+        if let Some(initializer) = self.find_method("init") {
+            initializer.arity()
+        } else {
+            0
+        }
     }
 }
 

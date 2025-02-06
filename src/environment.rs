@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::token::{LiteralType, Token};
+use crate::token::{LiteralType, Token, TokenType};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Environment {
@@ -48,6 +48,22 @@ impl Environment {
                 None => Err(format!("Undefined variable: '{var_name}'.")),
             },
         }
+    }
+
+    pub fn get_at_str(
+        &self,
+        distance: usize,
+        name: &str,
+        line: usize,
+    ) -> Result<LiteralType, String> {
+        let token = Token::Literal(
+            TokenType::String,
+            name.to_owned(),
+            LiteralType::StringLiteral(name.to_owned()),
+            line,
+        );
+
+        self.get_at(distance, &token)
     }
 
     pub fn get_at(&self, distance: usize, name: &Token) -> Result<LiteralType, String> {

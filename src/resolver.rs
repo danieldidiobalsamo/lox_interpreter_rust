@@ -13,6 +13,7 @@ enum FunctionType {
     None,
     Function,
     Method,
+    Initializer,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -275,6 +276,14 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
         }
 
         if let Some(ref value) = *stmt.value {
+            if self.current_function == FunctionType::Initializer {
+                if let Expr::Literal(value_expr) = value {
+                    if value_expr.value != LiteralType::NilLiteral {
+                        return Err("Can't return a value from an initializer".to_owned());
+                    }
+                }
+            }
+
             self.resolve_expr(&value)?;
         }
 
@@ -295,7 +304,13 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
 
         for method in &stmt.methods {
             if let Stmt::Function(ref m) = **method {
-                self.resolve_function(&m, FunctionType::Method)?;
+                let declaration = if m.name.get_lexeme() == "init" {
+                    FunctionType::Initializer
+                } else {
+                    FunctionType::Method
+                };
+
+                self.resolve_function(&m, declaration)?;
             }
         }
 

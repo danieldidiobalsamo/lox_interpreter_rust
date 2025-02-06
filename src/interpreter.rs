@@ -392,6 +392,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
         let function = Callable::Function(Function {
             declaration: Box::new(stmt.clone()),
             closure: Rc::clone(&self.env),
+            is_initializer: false,
         });
 
         self.env
@@ -425,6 +426,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
                 let function = Function {
                     declaration: Box::new(m.clone()),
                     closure: Rc::clone(&self.env),
+                    is_initializer: m.name.get_lexeme() == "init",
                 };
 
                 methods.insert(m.name.get_lexeme(), function);
@@ -1153,5 +1155,36 @@ mod tests {
             .unwrap()
             .interpret_code("fun bad(){print this;}")
             .is_err());
+    }
+
+    #[test]
+    fn class_init() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/init.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(
+            &file_name,
+            &vec!["Player instance", "Player instance", "Player instance"],
+        );
+    }
+
+    #[test]
+    fn return_value_within_init() {
+        // return a value within a constructor is an error
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/return_value_within_init.lox").unwrap();
+
+        assert!(setup.lock().unwrap().interpret_code(&code).is_err());
+    }
+
+    #[test]
+    fn return_within_init() {
+        // return without a value inside a constructor is valid
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/return_within_init.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["Player instance"]);
     }
 }

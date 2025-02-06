@@ -1,0 +1,7 @@
+class Player{
+	init(){
+		return;
+	}
+}
+
+print Player();

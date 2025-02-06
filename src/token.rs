@@ -166,6 +166,13 @@ impl Token {
             Token::Literal(token_type, _, _, _) => token_type,
         }
     }
+
+    pub fn get_line(&self) -> usize {
+        match self {
+            Token::Simple(_, _, line) => *line,
+            Token::Literal(_, _, _, line) => *line,
+        }
+    }
 }
 
 impl Display for Token {
