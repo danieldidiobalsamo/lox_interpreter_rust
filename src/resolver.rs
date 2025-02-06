@@ -15,10 +15,18 @@ enum FunctionType {
     Method,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+enum ClassType {
+    #[default]
+    None,
+    Class,
+}
+
 pub struct Resolver<'a> {
     interpreter: &'a mut Interpreter,
     scopes: Vec<HashMap<String, bool>>,
     current_function: FunctionType,
+    current_class: ClassType,
 }
 
 impl<'a> Resolver<'a> {
@@ -27,6 +35,7 @@ impl<'a> Resolver<'a> {
             interpreter,
             scopes: Vec::new(),
             current_function: FunctionType::None,
+            current_class: ClassType::None,
         }
     }
 
@@ -192,6 +201,15 @@ impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
 
         Ok(())
     }
+
+    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<(), String> {
+        if self.current_class == ClassType::None {
+            return Err("Can't use 'this' outside of a class".to_owned());
+        }
+
+        self.resolve_local(&Expr::This(expr.clone()), &expr.keyword);
+        Ok(())
+    }
 }
 
 impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
@@ -264,14 +282,26 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
     }
 
     fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), String> {
+        let enclosing_class = self.current_class.clone();
+        self.current_class = ClassType::Class;
+
         self.declare(&stmt.name)?;
         self.define(&stmt.name);
+
+        self.begin_scope();
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert("this".to_owned(), true);
+        }
 
         for method in &stmt.methods {
             if let Stmt::Function(ref m) = **method {
                 self.resolve_function(&m, FunctionType::Method)?;
             }
         }
+
+        self.end_scope();
+
+        self.current_class = enclosing_class;
 
         Ok(())
     }

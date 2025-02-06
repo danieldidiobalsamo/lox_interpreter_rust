@@ -41,6 +41,22 @@ pub struct Function {
     pub closure: Rc<RefCell<Environment>>,
 }
 
+impl Function {
+    fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> Self {
+        let mut env = Environment::new(Some(Rc::clone(&self.closure)));
+
+        env.borrow_mut().define(
+            "this",
+            &LiteralType::Callable(Callable::LoxInstance(instance)),
+        );
+
+        Self {
+            declaration: self.declaration.clone(),
+            closure: Rc::new(RefCell::new(env.clone())),
+        }
+    }
+}
+
 impl LoxCallable for Function {
     fn call(
         &mut self,
@@ -138,7 +154,9 @@ impl LoxInstance {
         }
 
         match self.class.borrow().find_method(&name.get_lexeme()) {
-            Some(method) => Ok(LiteralType::Callable(Callable::Function(method.clone()))),
+            Some(method) => Ok(LiteralType::Callable(Callable::Function(
+                method.bind(Rc::new(RefCell::new(self.clone()))),
+            ))),
             None => Err(format!("Undefined property: {}", name.get_lexeme())),
         }
     }

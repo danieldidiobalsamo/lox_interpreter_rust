@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use crate::{
-    expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Set, Unary, Variable},
+    expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Set, This, Unary, Variable},
     stmt::{self, Block, Class, Expression, If, Print, Return, Stmt, Var, While},
     token::{LiteralType, Token, TokenType},
 };
@@ -531,14 +531,10 @@ impl Parser {
             }
         }
 
-        if self.match_token_type(&[TokenType::LeftParen]) {
-            let expr = self.expression()?;
-
-            let _ = self.consume(TokenType::RightParen, "Expect ')' after expression.");
-
-            return Ok(Expr::Grouping(Grouping {
+        if self.match_token_type(&[TokenType::This]) {
+            return Ok(Expr::This(This {
                 uuid: Uuid::new_v4(),
-                expression: Box::new(expr),
+                keyword: self.previous().clone(),
             }));
         }
 
@@ -546,6 +542,17 @@ impl Parser {
             return Ok(Expr::Variable(Variable {
                 uuid: Uuid::new_v4(),
                 name: self.previous().clone(),
+            }));
+        }
+
+        if self.match_token_type(&[TokenType::LeftParen]) {
+            let expr = self.expression()?;
+
+            let _ = self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
+
+            return Ok(Expr::Grouping(Grouping {
+                uuid: Uuid::new_v4(),
+                expression: Box::new(expr),
             }));
         }
 

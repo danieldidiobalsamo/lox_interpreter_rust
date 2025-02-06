@@ -314,6 +314,10 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
 
         Err(format!("{} : Only instances have fields.", expr.name))
     }
+
+    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<LiteralType, String> {
+        self.look_up_variable(&expr.keyword, &Expr::This(expr.clone()))
+    }
 }
 
 impl StmtVisitor<Result<(), Exit>> for Interpreter {
@@ -1112,5 +1116,42 @@ mod tests {
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
         check_results(&file_name, &vec!["hello world!"]);
+    }
+
+    #[test]
+    fn this() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/this.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["hello nobody"]);
+    }
+
+    #[test]
+    fn callback_with_this() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/callback_with_this.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["Player instance"]);
+    }
+
+    #[test]
+    fn this_outside_method() {
+        // 'this' outside a method is an error
+        let setup = Setup::new();
+        assert!(setup.lock().unwrap().interpret_code("print this;").is_err());
+    }
+
+    #[test]
+    fn this_outside_class_method() {
+        // 'this' outside in a function (not method) is an error
+        let setup = Setup::new();
+
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("fun bad(){print this;}")
+            .is_err());
     }
 }
