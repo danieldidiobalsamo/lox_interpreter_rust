@@ -318,6 +318,38 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<LiteralType, String> {
         self.look_up_variable(&expr.keyword, &Expr::This(expr.clone()))
     }
+
+    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<LiteralType, String> {
+        if let Some(distance) = self.locals.get(&Expr::SuperExpr(expr.clone())) {
+            let super_class =
+                self.env
+                    .borrow()
+                    .get_at_str(*distance, "super", expr.method.get_line())?;
+            let object =
+                self.env
+                    .borrow()
+                    .get_at_str(*distance - 1, "this", expr.method.get_line())?;
+
+            if let LiteralType::Callable(Callable::LoxClass(c)) = &super_class {
+                if let LiteralType::Callable(Callable::LoxInstance(instance)) = object {
+                    match c.find_method(&expr.method.get_lexeme()) {
+                        Some(m) => {
+                            return Ok(LiteralType::Callable(Callable::Function(m.bind(instance))))
+                        }
+
+                        None => {
+                            return Err(format!(
+                                "Undefined property '{}'.",
+                                expr.method.get_lexeme()
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(format!("Bad super usage: '{}'.", expr.method.get_lexeme()))
+    }
 }
 
 impl StmtVisitor<Result<(), Exit>> for Interpreter {
@@ -415,9 +447,29 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
     }
 
     fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), Exit> {
+        let super_class = if let Some(ref super_class) = *stmt.super_class {
+            if let LiteralType::Callable(Callable::LoxClass(c)) =
+                self.evaluate(super_class).map_err(Exit::Error)?
+            {
+                Some(c)
+            } else {
+                return Err(Exit::Error("Superclass must be a class.".to_owned()));
+            }
+        } else {
+            None
+        };
+
         self.env
             .borrow_mut()
             .define(&stmt.name.get_lexeme(), &LiteralType::NilLiteral);
+
+        if stmt.super_class.is_some() {
+            self.env = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&self.env)))));
+            self.env.borrow_mut().define(
+                "super",
+                &LiteralType::Callable(Callable::LoxClass(super_class.clone().unwrap())),
+            );
+        }
 
         let mut methods = HashMap::new();
 
@@ -436,7 +488,13 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
         let class = Callable::LoxClass(LoxClass {
             name: stmt.name.get_lexeme(),
             methods,
+            super_class: Box::new(super_class),
         });
+
+        if stmt.super_class.is_some() {
+            let enclosing = Rc::clone(self.env.borrow_mut().enclosing.as_ref().unwrap());
+            self.env = enclosing;
+        }
 
         let _ = self
             .env
@@ -479,12 +537,12 @@ mod tests {
             self.id
         }
 
-        fn get_statements(&self, code: &str) -> Vec<Stmt> {
+        fn get_statements(&self, code: &str) -> Result<Vec<Stmt>, String> {
             let mut scanner = Scanner::new(code);
             let tokens = scanner.scan_tokens().unwrap();
 
             let mut parser = Parser::new(tokens);
-            parser.parse().unwrap()
+            parser.parse()
         }
 
         fn interpret_code(&mut self, code: &str) -> Result<String, String> {
@@ -502,7 +560,7 @@ mod tests {
 
             let _ = File::create(&name).unwrap();
 
-            let statements = self.get_statements(code);
+            let statements = self.get_statements(code)?;
 
             let mut resolver = Resolver::new(&mut i);
             resolver.resolve(&statements)?;
@@ -1186,5 +1244,64 @@ mod tests {
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
         check_results(&file_name, &vec!["Player instance"]);
+    }
+
+    #[test]
+    fn inheritance_simple() {
+        // return without a value inside a constructor is valid
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/inheritance_simple.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(
+            &file_name,
+            &vec!["hello from Entity!", "hello from Player!"],
+        );
+    }
+
+    #[test]
+    fn inheritance_harder() {
+        // return without a value inside a constructor is valid
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/inheritance_harder.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["A method"]);
+    }
+
+    #[test]
+    fn superclass_must_be_a_class() {
+        let setup = Setup::new();
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("var a;class B < a{}")
+            .is_err());
+    }
+
+    #[test]
+    fn super_outside_method() {
+        let setup = Setup::new();
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("print super;")
+            .is_err());
+
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("super.test();")
+            .is_err());
+    }
+
+    #[test]
+    fn super_with_class_not_having_superclass() {
+        let setup = Setup::new();
+        assert!(setup
+            .lock()
+            .unwrap()
+            .interpret_code("class Player{test(){super.test();}}")
+            .is_err());
     }
 }

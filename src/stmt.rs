@@ -119,4 +119,5 @@ pub struct Return {
 pub struct Class {
     pub name: Token,
     pub methods: Vec<Box<Stmt>>,
+    pub super_class: Box<Option<Expr>>,
 }

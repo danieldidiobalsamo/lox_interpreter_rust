@@ -5,7 +5,7 @@ use crate::token::{LiteralType, Token, TokenType};
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Environment {
     values: HashMap<String, LiteralType>,
-    enclosing: Option<Rc<RefCell<Environment>>>,
+    pub enclosing: Option<Rc<RefCell<Environment>>>,
 }
 
 impl Environment {
