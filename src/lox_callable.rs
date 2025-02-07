@@ -43,7 +43,7 @@ pub struct Function {
 }
 
 impl Function {
-    fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> Self {
+    pub fn bind(&self, instance: Rc<RefCell<LoxInstance>>) -> Self {
         let mut env = Environment::new(Some(Rc::clone(&self.closure)));
 
         env.borrow_mut().define(
@@ -135,6 +135,7 @@ impl LoxCallable for Clock {
 pub struct LoxClass {
     pub name: String,
     pub methods: HashMap<String, Function>,
+    pub super_class: Box<Option<LoxClass>>,
 }
 
 impl LoxCallable for LoxClass {
@@ -170,7 +171,15 @@ impl LoxCallable for LoxClass {
 
 impl LoxClass {
     pub fn find_method(&self, name: &str) -> Option<&Function> {
-        self.methods.get(name)
+        let method = self.methods.get(name);
+
+        if method.is_none() {
+            if let Some(ref super_class) = *self.super_class {
+                return super_class.find_method(name);
+            }
+        }
+
+        method
     }
 }
 

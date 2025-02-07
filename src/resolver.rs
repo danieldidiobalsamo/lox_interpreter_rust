@@ -1,7 +1,7 @@
 use std::{collections::HashMap, default};
 
 use crate::{
-    expr::{AstVisitor, Expr},
+    expr::{AstVisitor, Expr, Variable},
     interpreter::Interpreter,
     stmt::{Stmt, StmtVisitor},
     token::{LiteralType, Token},
@@ -21,6 +21,7 @@ enum ClassType {
     #[default]
     None,
     Class,
+    Subclass,
 }
 
 pub struct Resolver<'a> {
@@ -211,6 +212,23 @@ impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
         self.resolve_local(&Expr::This(expr.clone()), &expr.keyword);
         Ok(())
     }
+
+    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<(), String> {
+        match self.current_class {
+            ClassType::Subclass => {
+                self.resolve_local(&Expr::SuperExpr(expr.clone()), &expr.keyword);
+                return Ok(());
+            }
+            ClassType::None => Err(format!(
+                "{} : can't use 'super' outside of a class.",
+                expr.keyword
+            )),
+            _ => Err(format!(
+                "{} : can't use 'super' in a class with no superclass.",
+                expr.keyword
+            )),
+        }
+    }
 }
 
 impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
@@ -297,10 +315,27 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
         self.declare(&stmt.name)?;
         self.define(&stmt.name);
 
-        self.begin_scope();
-        if let Some(scope) = self.scopes.last_mut() {
-            scope.insert("this".to_owned(), true);
+        if let Some(Expr::Variable(ref super_class)) = *stmt.super_class {
+            if stmt.name.get_lexeme() == *super_class.name.get_lexeme() {
+                return Err("A class can't inherit from itself.".to_owned());
+            }
+
+            self.current_class = ClassType::Subclass;
+
+            let _ = self.resolve_expr(&Expr::Variable(super_class.clone()))?;
+
+            self.begin_scope();
+            self.scopes
+                .last_mut()
+                .unwrap()
+                .insert("super".to_owned(), true);
         }
+
+        self.begin_scope();
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert("this".to_owned(), true);
 
         for method in &stmt.methods {
             if let Stmt::Function(ref m) = **method {
@@ -315,6 +350,10 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
         }
 
         self.end_scope();
+
+        if stmt.super_class.is_some() {
+            self.end_scope();
+        }
 
         self.current_class = enclosing_class;
 

@@ -1,0 +1,14 @@
+class Entity{
+	hello(){
+		print "hello from Entity!";
+	}
+}
+
+class Player < Entity{
+	hello(){
+		super.hello();
+		print "hello from Player!";
+	}
+}
+
+Player().hello();

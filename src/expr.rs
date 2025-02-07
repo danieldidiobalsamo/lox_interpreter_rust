@@ -18,6 +18,7 @@ pub enum Expr {
     Get(Get),
     Set(Set),
     This(This),
+    SuperExpr(SuperExpr),
 }
 
 impl Expr {
@@ -34,6 +35,7 @@ impl Expr {
             Expr::Get(expr) => expr.uuid,
             Expr::Set(expr) => expr.uuid,
             Expr::This(expr) => expr.uuid,
+            Expr::SuperExpr(expr) => expr.uuid,
         }
     }
 }
@@ -59,7 +61,8 @@ impl Display for Expr {
             Expr::Call(_) => write!(f, "Call"),
             Expr::Get(_) => write!(f, "Get"),
             Expr::Set(_) => write!(f, "Set"),
-            Expr::This(_) => write!(f, "Set"),
+            Expr::This(_) => write!(f, "This"),
+            Expr::SuperExpr(_) => write!(f, "Super"),
         }
     }
 }
@@ -78,6 +81,7 @@ impl Expr {
             Expr::Get(get) => visitor.visit_get_expr(get),
             Expr::Set(set) => visitor.visit_set_expr(set),
             Expr::This(this) => visitor.visit_this_expr(this),
+            Expr::SuperExpr(super_expr) => visitor.visit_super_expr(super_expr),
         }
     }
 }
@@ -94,6 +98,7 @@ pub trait AstVisitor<T> {
     fn visit_get_expr(&mut self, expr: &Get) -> T;
     fn visit_set_expr(&mut self, expr: &Set) -> T;
     fn visit_this_expr(&mut self, expr: &This) -> T;
+    fn visit_super_expr(&mut self, expr: &SuperExpr) -> T;
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -171,4 +176,11 @@ pub struct Set {
 pub struct This {
     pub uuid: Uuid,
     pub keyword: Token,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SuperExpr {
+    pub uuid: Uuid,
+    pub keyword: Token,
+    pub method: Token,
 }
