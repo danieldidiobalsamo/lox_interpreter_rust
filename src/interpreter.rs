@@ -5,7 +5,7 @@ use std::io::Write;
 use std::rc::Rc;
 
 use crate::environment::Environment;
-use crate::expr::{AstVisitor, Expr, Literal, Variable};
+use crate::expr::{AstVisitor, Expr, Variable};
 use crate::lox_callable::{Callable, Clock, Function, LoxCallable, LoxClass};
 use crate::stmt::{Exit, Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
@@ -83,8 +83,8 @@ impl Interpreter {
 
     fn is_truthy(&self, literal_type: &LiteralType) -> bool {
         match literal_type {
-            LiteralType::BoolLiteral(b) => *b,
-            LiteralType::NilLiteral => false,
+            LiteralType::Bool(b) => *b,
+            LiteralType::Nil => false,
             _ => true,
         }
     }
@@ -131,7 +131,7 @@ impl Interpreter {
 
     fn look_up_variable(&mut self, name: &Token, expr: &Expr) -> Result<LiteralType, String> {
         match self.locals.get(expr) {
-            Some(distance) => self.env.borrow().get_at(*distance, &name),
+            Some(distance) => self.env.borrow().get_at(*distance, name),
             None => self.globals.borrow().get(name),
         }
     }
@@ -149,7 +149,7 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         match expr.operator.get_type() {
             TokenType::Minus => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::FloatLiteral(l - r))
+                Ok(LiteralType::Float(l - r))
             }
             TokenType::Slash => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
@@ -158,37 +158,37 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                     return Err("Can't divide by 0".to_owned());
                 }
 
-                Ok(LiteralType::FloatLiteral(l / r))
+                Ok(LiteralType::Float(l / r))
             }
             TokenType::Star => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::FloatLiteral(l * r))
+                Ok(LiteralType::Float(l * r))
             }
             TokenType::Plus => match self.check_number_operands(&left, &right, &expr.operator) {
-                Ok((l, r)) => Ok(LiteralType::FloatLiteral(l + r)),
+                Ok((l, r)) => Ok(LiteralType::Float(l + r)),
                 Err(e_1) => match self.check_string_operands(&left, &right, &expr.operator) {
-                    Ok((l, r)) => Ok(LiteralType::StringLiteral(l + &r)),
+                    Ok((l, r)) => Ok(LiteralType::String(l + &r)),
                     Err(e_2) => Err(format!("{e_1}\nOr {e_2}")),
                 },
             },
             TokenType::Greater => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l > r))
+                Ok(LiteralType::Bool(l > r))
             }
             TokenType::GreaterEqual => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l >= r))
+                Ok(LiteralType::Bool(l >= r))
             }
             TokenType::Less => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l < r))
+                Ok(LiteralType::Bool(l < r))
             }
             TokenType::LessEqual => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l <= r))
+                Ok(LiteralType::Bool(l <= r))
             }
-            TokenType::EqualEqual => Ok(LiteralType::BoolLiteral(left == right)),
-            TokenType::BangEqual => Ok(LiteralType::BoolLiteral(left != right)),
+            TokenType::EqualEqual => Ok(LiteralType::Bool(left == right)),
+            TokenType::BangEqual => Ok(LiteralType::Bool(left != right)),
             _ => panic!("not a binary operator : {:?}", expr.operator),
         }
     }
@@ -201,12 +201,12 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         let right = self.evaluate(&expr.right)?;
 
         match expr.operator.get_type() {
-            TokenType::Bang => Ok(LiteralType::BoolLiteral(!self.is_truthy(&right))),
+            TokenType::Bang => Ok(LiteralType::Bool(!self.is_truthy(&right))),
             TokenType::Minus => {
                 let v = self.check_number_operand(&right, &expr.operator)?;
-                Ok(LiteralType::FloatLiteral(-v))
+                Ok(LiteralType::Float(-v))
             }
-            _ => Ok(LiteralType::NilLiteral),
+            _ => Ok(LiteralType::Nil),
         }
     }
 
@@ -280,7 +280,7 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                     Exit::Error(s) => s,
                 })?),
                 Callable::LoxClass(mut lox_class) => {
-                    Ok(lox_class.call(self, &vec![]).map_err(|e| match e {
+                    Ok(lox_class.call(self, &[]).map_err(|e| match e {
                         Exit::Return(l) => l.to_string(),
                         Exit::Error(s) => s,
                     })?)
@@ -320,35 +320,34 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     }
 
     fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<LiteralType, String> {
-        if let Some(distance) = self.locals.get(&Expr::SuperExpr(expr.clone())) {
-            let super_class =
-                self.env
-                    .borrow()
-                    .get_at_str(*distance, "super", expr.method.get_line())?;
-            let object =
-                self.env
-                    .borrow()
-                    .get_at_str(*distance - 1, "this", expr.method.get_line())?;
+        let sup = &Expr::SuperExpr(expr.clone());
+        let Some(distance) = self.locals.get(sup) else {
+            panic!("Super hasn't been resolved correctly {}", sup);
+        };
 
-            if let LiteralType::Callable(Callable::LoxClass(c)) = &super_class {
-                if let LiteralType::Callable(Callable::LoxInstance(instance)) = object {
-                    match c.find_method(&expr.method.get_lexeme()) {
-                        Some(m) => {
-                            return Ok(LiteralType::Callable(Callable::Function(m.bind(instance))))
-                        }
+        let super_class =
+            self.env
+                .borrow()
+                .get_at_str(*distance, "super", expr.method.get_line())?;
+        let object = self
+            .env
+            .borrow()
+            .get_at_str(*distance - 1, "this", expr.method.get_line())?;
 
-                        None => {
-                            return Err(format!(
-                                "Undefined property '{}'.",
-                                expr.method.get_lexeme()
-                            ))
-                        }
-                    }
-                }
-            }
+        match (&super_class, object) {
+            (
+                LiteralType::Callable(Callable::LoxClass(c)),
+                LiteralType::Callable(Callable::LoxInstance(instance)),
+            ) => match c.find_method(&expr.method.get_lexeme()) {
+                Some(m) => Ok(LiteralType::Callable(Callable::Function(m.bind(instance)))),
+
+                None => Err(format!(
+                    "Undefined property '{}'.",
+                    expr.method.get_lexeme()
+                )),
+            },
+            _ => Err(format!("Bad super usage: '{}'.", expr.method.get_lexeme())),
         }
-
-        Err(format!("Bad super usage: '{}'.", expr.method.get_lexeme()))
     }
 }
 
@@ -379,7 +378,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
     fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), Exit> {
         let value = match *stmt.initializer {
             Some(ref init) => self.evaluate(init).map_err(Exit::Error)?,
-            None => LiteralType::NilLiteral,
+            None => LiteralType::Nil,
         };
 
         self.env
@@ -461,7 +460,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
 
         self.env
             .borrow_mut()
-            .define(&stmt.name.get_lexeme(), &LiteralType::NilLiteral);
+            .define(&stmt.name.get_lexeme(), &LiteralType::Nil);
 
         if stmt.super_class.is_some() {
             self.env = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&self.env)))));
@@ -496,8 +495,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
             self.env = enclosing;
         }
 
-        let _ = self
-            .env
+        self.env
             .borrow_mut()
             .assign(&stmt.name, &LiteralType::Callable(class))
             .map_err(Exit::Error)?;
@@ -516,10 +514,7 @@ mod tests {
     use super::*;
 
     use crate::scanner::Scanner;
-    use crate::{
-        parser::Parser,
-        resolver::{self, Resolver},
-    };
+    use crate::{parser::Parser, resolver::Resolver};
 
     struct Setup {
         id: usize,
@@ -594,14 +589,11 @@ mod tests {
     #[test]
     fn is_truthy() {
         let i = Interpreter::default();
-        assert_eq!(i.is_truthy(&LiteralType::NilLiteral), false);
-        assert_eq!(i.is_truthy(&LiteralType::FloatLiteral(5.0)), true);
-        assert_eq!(
-            i.is_truthy(&LiteralType::StringLiteral("abc".to_owned())),
-            true
-        );
-        assert_eq!(i.is_truthy(&LiteralType::BoolLiteral(true)), true);
-        assert_eq!(i.is_truthy(&LiteralType::BoolLiteral(false)), false);
+        assert_eq!(i.is_truthy(&LiteralType::Nil), false);
+        assert_eq!(i.is_truthy(&LiteralType::Float(5.0)), true);
+        assert_eq!(i.is_truthy(&LiteralType::String("abc".to_owned())), true);
+        assert_eq!(i.is_truthy(&LiteralType::Bool(true)), true);
+        assert_eq!(i.is_truthy(&LiteralType::Bool(false)), false);
     }
 
     #[test]
@@ -1096,6 +1088,15 @@ mod tests {
 
         let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
         check_results(&file_name, &vec!["55"]);
+    }
+
+    #[test]
+    fn function_optimized_fibonacci() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/optimized_fibonacci.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["190392490709135"]);
     }
 
     #[test]

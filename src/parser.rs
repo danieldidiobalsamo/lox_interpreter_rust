@@ -174,7 +174,7 @@ impl Parser {
         } else {
             Expr::Literal(Literal {
                 uuid: Uuid::new_v4(),
-                value: LiteralType::NilLiteral,
+                value: LiteralType::Nil,
             })
         };
 
@@ -229,7 +229,7 @@ impl Parser {
         if condition.is_none() {
             condition = Some(Expr::Literal(Literal {
                 uuid: Uuid::new_v4(),
-                value: LiteralType::BoolLiteral(true),
+                value: LiteralType::Bool(true),
             }));
         }
 
@@ -523,21 +523,21 @@ impl Parser {
         if self.match_token_type(&[TokenType::False]) {
             return Ok(Expr::Literal(Literal {
                 uuid: Uuid::new_v4(),
-                value: LiteralType::BoolLiteral(false),
+                value: LiteralType::Bool(false),
             }));
         }
 
         if self.match_token_type(&[TokenType::True]) {
             return Ok(Expr::Literal(Literal {
                 uuid: Uuid::new_v4(),
-                value: LiteralType::BoolLiteral(true),
+                value: LiteralType::Bool(true),
             }));
         }
 
         if self.match_token_type(&[TokenType::Nil]) {
             return Ok(Expr::Literal(Literal {
                 uuid: Uuid::new_v4(),
-                value: LiteralType::NilLiteral,
+                value: LiteralType::Nil,
             }));
         }
 

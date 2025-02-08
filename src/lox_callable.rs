@@ -99,7 +99,7 @@ impl LoxCallable for Function {
             return return_this();
         }
 
-        Ok(LiteralType::NilLiteral)
+        Ok(LiteralType::Nil)
     }
 
     fn arity(&self) -> usize {
@@ -121,9 +121,7 @@ impl LoxCallable for Clock {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| Exit::Error(e.to_string()))?;
 
-        Ok(LiteralType::FloatLiteral(
-            since_epoch.as_millis() as f64 / 1000.0,
-        ))
+        Ok(LiteralType::Float(since_epoch.as_millis() as f64 / 1000.0))
     }
 
     fn arity(&self) -> usize {

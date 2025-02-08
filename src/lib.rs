@@ -1,17 +1,19 @@
+#![forbid(unsafe_code)]
+
 use std::error::Error;
 use std::fs;
 use std::io::{stdin, stdout, Write};
 use std::{env, process};
 
-pub mod environment;
-pub mod expr;
-pub mod interpreter;
-pub mod lox_callable;
-pub mod parser;
-pub mod resolver;
-pub mod scanner;
-pub mod stmt;
-pub mod token;
+mod environment;
+mod expr;
+mod interpreter;
+mod lox_callable;
+mod parser;
+mod resolver;
+mod scanner;
+mod stmt;
+mod token;
 
 use interpreter::Interpreter;
 use parser::Parser;

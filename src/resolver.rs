@@ -1,7 +1,7 @@
-use std::{collections::HashMap, default};
+use std::collections::HashMap;
 
 use crate::{
-    expr::{AstVisitor, Expr, Variable},
+    expr::{AstVisitor, Expr},
     interpreter::Interpreter,
     stmt::{Stmt, StmtVisitor},
     token::{LiteralType, Token},
@@ -57,12 +57,12 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_stmt(&mut self, statement: &Stmt) -> Result<(), String> {
-        let _ = statement.accept(self)?;
+        statement.accept(self)?;
         Ok(())
     }
 
     fn resolve_expr(&mut self, expr: &Expr) -> Result<(), String> {
-        let _ = expr.accept(self)?;
+        expr.accept(self)?;
 
         Ok(())
     }
@@ -73,7 +73,7 @@ impl<'a> Resolver<'a> {
         for i in (0..n).rev() {
             if let Some(map) = self.scopes.get(i) {
                 if map.contains_key(&name.get_lexeme()) {
-                    self.interpreter.resolve(&expr, n - 1 - i);
+                    self.interpreter.resolve(expr, n - 1 - i);
                 }
             }
         }
@@ -90,8 +90,8 @@ impl<'a> Resolver<'a> {
         self.begin_scope();
 
         for param in &function.params {
-            self.declare(&param)?;
-            self.define(&param);
+            self.declare(param)?;
+            self.define(param);
         }
 
         self.resolve_box_stmt(&function.body)?;
@@ -130,8 +130,8 @@ impl<'a> Resolver<'a> {
     }
 }
 
-impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
-    fn visit_literal(&mut self, expr: &crate::expr::Literal) -> Result<(), String> {
+impl AstVisitor<Result<(), String>> for Resolver<'_> {
+    fn visit_literal(&mut self, _expr: &crate::expr::Literal) -> Result<(), String> {
         Ok(())
     }
 
@@ -157,7 +157,7 @@ impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
 
         if let Some(map) = self.scopes.last() {
             if let Some(val) = map.get(&expr.name.get_lexeme()) {
-                if *val == false {
+                if !(*val) {
                     return Err(error);
                 }
             }
@@ -217,7 +217,7 @@ impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
         match self.current_class {
             ClassType::Subclass => {
                 self.resolve_local(&Expr::SuperExpr(expr.clone()), &expr.keyword);
-                return Ok(());
+                Ok(())
             }
             ClassType::None => Err(format!(
                 "{} : can't use 'super' outside of a class.",
@@ -231,7 +231,7 @@ impl<'a> AstVisitor<Result<(), String>> for Resolver<'a> {
     }
 }
 
-impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
+impl StmtVisitor<Result<(), String>> for Resolver<'_> {
     fn visit_expression(&mut self, stmt: &crate::stmt::Expression) -> Result<(), String> {
         self.resolve_expr(&stmt.expression)?;
         Ok(())
@@ -283,7 +283,7 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
     fn visit_function(&mut self, stmt: &crate::stmt::Function) -> Result<(), String> {
         self.declare(&stmt.name)?;
         self.define(&stmt.name);
-        self.resolve_function(&stmt, FunctionType::Function)?;
+        self.resolve_function(stmt, FunctionType::Function)?;
 
         Ok(())
     }
@@ -296,13 +296,13 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
         if let Some(ref value) = *stmt.value {
             if self.current_function == FunctionType::Initializer {
                 if let Expr::Literal(value_expr) = value {
-                    if value_expr.value != LiteralType::NilLiteral {
+                    if value_expr.value != LiteralType::Nil {
                         return Err("Can't return a value from an initializer".to_owned());
                     }
                 }
             }
 
-            self.resolve_expr(&value)?;
+            self.resolve_expr(value)?;
         }
 
         Ok(())
@@ -322,7 +322,7 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
 
             self.current_class = ClassType::Subclass;
 
-            let _ = self.resolve_expr(&Expr::Variable(super_class.clone()))?;
+            self.resolve_expr(&Expr::Variable(super_class.clone()))?;
 
             self.begin_scope();
             self.scopes
@@ -345,7 +345,7 @@ impl<'a> StmtVisitor<Result<(), String>> for Resolver<'a> {
                     FunctionType::Method
                 };
 
-                self.resolve_function(&m, declaration)?;
+                self.resolve_function(m, declaration)?;
             }
         }
 

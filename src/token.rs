@@ -97,16 +97,16 @@ impl Display for TokenType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum LiteralType {
-    StringLiteral(String),
-    FloatLiteral(f64),
-    BoolLiteral(bool), // in lox, "nil" and "false" are false, everything else is true
-    NilLiteral,
+    String(String),
+    Float(f64),
+    Bool(bool), // in lox, "nil" and "false" are false, everything else is true
+    Nil,
     Callable(Callable),
 }
 
 impl LiteralType {
     pub fn get_float(&self) -> Result<f64, String> {
-        if let LiteralType::FloatLiteral(v) = self {
+        if let LiteralType::Float(v) = self {
             return Ok(*v);
         }
 
@@ -114,7 +114,7 @@ impl LiteralType {
     }
 
     pub fn get_string(&self) -> Result<String, String> {
-        if let LiteralType::StringLiteral(s) = self {
+        if let LiteralType::String(s) = self {
             return Ok(s.to_string());
         }
 
@@ -128,10 +128,10 @@ impl Display for LiteralType {
             f,
             "{}",
             match self {
-                LiteralType::StringLiteral(l) => String::from(l),
-                LiteralType::FloatLiteral(l) => l.to_string(),
-                LiteralType::BoolLiteral(l) => l.to_string(),
-                LiteralType::NilLiteral => String::from("nil"),
+                LiteralType::String(l) => String::from(l),
+                LiteralType::Float(l) => l.to_string(),
+                LiteralType::Bool(l) => l.to_string(),
+                LiteralType::Nil => String::from("nil"),
                 LiteralType::Callable(c) => match c {
                     Callable::Clock(_) => "<fn clock>".to_owned(),
                     Callable::Function(f) => format!("<fn {}>", f.declaration.name.get_lexeme()),
