@@ -1091,6 +1091,15 @@ mod tests {
     }
 
     #[test]
+    fn function_optimized_fibonacci() {
+        let setup = Setup::new();
+        let code = fs::read_to_string("./test_lox_scripts/optimized_fibonacci.lox").unwrap();
+
+        let file_name = setup.lock().unwrap().interpret_code(&code).unwrap();
+        check_results(&file_name, &vec!["190392490709135"]);
+    }
+
+    #[test]
     fn closures() {
         let setup = Setup::new();
         let code = fs::read_to_string("./test_lox_scripts/closures.lox").unwrap();
