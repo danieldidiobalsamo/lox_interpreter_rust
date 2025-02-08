@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    expr::{Expr, Variable},
+    expr::Expr,
     token::{LiteralType, Token},
 };
 

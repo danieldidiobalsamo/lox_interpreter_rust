@@ -5,7 +5,7 @@ use std::io::Write;
 use std::rc::Rc;
 
 use crate::environment::Environment;
-use crate::expr::{AstVisitor, Expr, Literal, Variable};
+use crate::expr::{AstVisitor, Expr, Variable};
 use crate::lox_callable::{Callable, Clock, Function, LoxCallable, LoxClass};
 use crate::stmt::{Exit, Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
@@ -131,7 +131,7 @@ impl Interpreter {
 
     fn look_up_variable(&mut self, name: &Token, expr: &Expr) -> Result<LiteralType, String> {
         match self.locals.get(expr) {
-            Some(distance) => self.env.borrow().get_at(*distance, &name),
+            Some(distance) => self.env.borrow().get_at(*distance, name),
             None => self.globals.borrow().get(name),
         }
     }
@@ -280,7 +280,7 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                     Exit::Error(s) => s,
                 })?),
                 Callable::LoxClass(mut lox_class) => {
-                    Ok(lox_class.call(self, &vec![]).map_err(|e| match e {
+                    Ok(lox_class.call(self, &[]).map_err(|e| match e {
                         Exit::Return(l) => l.to_string(),
                         Exit::Error(s) => s,
                     })?)
@@ -496,8 +496,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
             self.env = enclosing;
         }
 
-        let _ = self
-            .env
+        self.env
             .borrow_mut()
             .assign(&stmt.name, &LiteralType::Callable(class))
             .map_err(Exit::Error)?;
@@ -516,10 +515,7 @@ mod tests {
     use super::*;
 
     use crate::scanner::Scanner;
-    use crate::{
-        parser::Parser,
-        resolver::{self, Resolver},
-    };
+    use crate::{parser::Parser, resolver::Resolver};
 
     struct Setup {
         id: usize,

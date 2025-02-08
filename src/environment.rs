@@ -68,13 +68,11 @@ impl Environment {
 
     pub fn get_at(&self, distance: usize, name: &Token) -> Result<LiteralType, String> {
         if distance == 0 {
-            return self.get(name);
+            self.get(name)
+        } else if let Some(e) = self.enclosing.as_ref() {
+            e.borrow().get_at(distance - 1, name)
         } else {
-            if let Some(e) = self.enclosing.as_ref() {
-                return e.borrow().get_at(distance - 1, name);
-            } else {
-                return Err(format!("no enclosing env containing {}", name.get_lexeme()));
-            }
+            Err(format!("no enclosing env containing {}", name.get_lexeme()))
         }
     }
 
@@ -85,13 +83,11 @@ impl Environment {
         value: &LiteralType,
     ) -> Result<(), String> {
         if distance == 0 {
-            self.define(&name.get_lexeme(), &value);
+            self.define(&name.get_lexeme(), value);
+        } else if let Some(e) = self.enclosing.as_ref() {
+            e.borrow_mut().assign_at(distance - 1, name, value)?;
         } else {
-            if let Some(e) = self.enclosing.as_ref() {
-                e.borrow_mut().assign_at(distance - 1, &name, &value)?;
-            } else {
-                return Err(format!("no enclosing env containing {value}"));
-            }
+            return Err(format!("no enclosing env containing {value}"));
         }
 
         Ok(())
