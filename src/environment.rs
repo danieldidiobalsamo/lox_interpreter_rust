@@ -59,7 +59,7 @@ impl Environment {
         let token = Token::Literal(
             TokenType::String,
             name.to_owned(),
-            LiteralType::StringLiteral(name.to_owned()),
+            LiteralType::String(name.to_owned()),
             line,
         );
 
@@ -105,7 +105,7 @@ mod tests {
         // var i=1; while (i < 5){print i;i+=1;}
 
         let mut map = HashMap::new();
-        map.insert("a".to_owned(), LiteralType::FloatLiteral(1.));
+        map.insert("a".to_owned(), LiteralType::Float(1.));
 
         let outer = Environment::new(Some(Rc::new(RefCell::new(Environment {
             values: map,
@@ -113,11 +113,11 @@ mod tests {
         }))));
 
         let mut inner = Environment::default();
-        inner.define("a", &LiteralType::FloatLiteral(4.));
+        inner.define("a", &LiteralType::Float(4.));
 
         let token = Token::Simple(TokenType::Identifier, "a".to_owned(), 1);
 
-        assert_eq!(inner.get(&token).unwrap(), LiteralType::FloatLiteral(4.));
-        assert_eq!(outer.get(&token).unwrap(), LiteralType::FloatLiteral(1.));
+        assert_eq!(inner.get(&token).unwrap(), LiteralType::Float(4.));
+        assert_eq!(outer.get(&token).unwrap(), LiteralType::Float(1.));
     }
 }

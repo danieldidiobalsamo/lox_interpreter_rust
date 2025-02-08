@@ -144,7 +144,7 @@ impl<'a> Scanner<'a> {
 
                     self.add_token_literal(
                         TokenType::String,
-                        LiteralType::StringLiteral(literal.to_string()),
+                        LiteralType::String(literal.to_string()),
                     );
                 }
             }
@@ -167,7 +167,7 @@ impl<'a> Scanner<'a> {
                     .parse::<f64>()
                     .unwrap();
 
-                self.add_token_literal(TokenType::Number, LiteralType::FloatLiteral(literal));
+                self.add_token_literal(TokenType::Number, LiteralType::Float(literal));
             }
 
             x if x.is_alphabetic() => {
@@ -390,7 +390,7 @@ mod tests {
             Token::Literal(
                 TokenType::String,
                 String::from("\"hello world\""),
-                LiteralType::StringLiteral(String::from("hello world")),
+                LiteralType::String(String::from("hello world")),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -408,13 +408,13 @@ mod tests {
             Token::Literal(
                 TokenType::String,
                 String::from("\"hello world\""),
-                LiteralType::StringLiteral(String::from("hello world")),
+                LiteralType::String(String::from("hello world")),
                 1,
             ),
             Token::Literal(
                 TokenType::String,
                 String::from("\"test\""),
-                LiteralType::StringLiteral(String::from("test")),
+                LiteralType::String(String::from("test")),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -432,7 +432,7 @@ mod tests {
             Token::Literal(
                 TokenType::String,
                 String::from("\"hello\nworld\""),
-                LiteralType::StringLiteral(String::from("hello\nworld")),
+                LiteralType::String(String::from("hello\nworld")),
                 2,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 2),
@@ -467,7 +467,7 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("5"),
-                LiteralType::FloatLiteral(5.0),
+                LiteralType::Float(5.0),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -485,7 +485,7 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("3.14"),
-                LiteralType::FloatLiteral(3.14),
+                LiteralType::Float(3.14),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -503,14 +503,14 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("2.2"),
-                LiteralType::FloatLiteral(2.2),
+                LiteralType::Float(2.2),
                 1,
             ),
             Token::Simple(TokenType::Plus, String::from("+"), 1),
             Token::Literal(
                 TokenType::Number,
                 String::from("5.1"),
-                LiteralType::FloatLiteral(5.1),
+                LiteralType::Float(5.1),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -529,7 +529,7 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("5.3"),
-                LiteralType::FloatLiteral(5.3),
+                LiteralType::Float(5.3),
                 1,
             ),
             Token::Simple(TokenType::Eof, String::from(""), 1),
@@ -610,14 +610,14 @@ mod tests {
             Token::Literal(
                 TokenType::Number,
                 String::from("2"),
-                LiteralType::FloatLiteral(2.),
+                LiteralType::Float(2.),
                 5,
             ),
             Token::Simple(TokenType::Comma, String::from(","), 5),
             Token::Literal(
                 TokenType::Number,
                 String::from("2"),
-                LiteralType::FloatLiteral(2.),
+                LiteralType::Float(2.),
                 5,
             ),
             Token::Simple(TokenType::RightParen, String::from(")"), 5),

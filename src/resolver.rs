@@ -296,7 +296,7 @@ impl StmtVisitor<Result<(), String>> for Resolver<'_> {
         if let Some(ref value) = *stmt.value {
             if self.current_function == FunctionType::Initializer {
                 if let Expr::Literal(value_expr) = value {
-                    if value_expr.value != LiteralType::NilLiteral {
+                    if value_expr.value != LiteralType::Nil {
                         return Err("Can't return a value from an initializer".to_owned());
                     }
                 }

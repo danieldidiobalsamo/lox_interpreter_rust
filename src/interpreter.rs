@@ -83,8 +83,8 @@ impl Interpreter {
 
     fn is_truthy(&self, literal_type: &LiteralType) -> bool {
         match literal_type {
-            LiteralType::BoolLiteral(b) => *b,
-            LiteralType::NilLiteral => false,
+            LiteralType::Bool(b) => *b,
+            LiteralType::Nil => false,
             _ => true,
         }
     }
@@ -149,7 +149,7 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         match expr.operator.get_type() {
             TokenType::Minus => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::FloatLiteral(l - r))
+                Ok(LiteralType::Float(l - r))
             }
             TokenType::Slash => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
@@ -158,37 +158,37 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                     return Err("Can't divide by 0".to_owned());
                 }
 
-                Ok(LiteralType::FloatLiteral(l / r))
+                Ok(LiteralType::Float(l / r))
             }
             TokenType::Star => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::FloatLiteral(l * r))
+                Ok(LiteralType::Float(l * r))
             }
             TokenType::Plus => match self.check_number_operands(&left, &right, &expr.operator) {
-                Ok((l, r)) => Ok(LiteralType::FloatLiteral(l + r)),
+                Ok((l, r)) => Ok(LiteralType::Float(l + r)),
                 Err(e_1) => match self.check_string_operands(&left, &right, &expr.operator) {
-                    Ok((l, r)) => Ok(LiteralType::StringLiteral(l + &r)),
+                    Ok((l, r)) => Ok(LiteralType::String(l + &r)),
                     Err(e_2) => Err(format!("{e_1}\nOr {e_2}")),
                 },
             },
             TokenType::Greater => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l > r))
+                Ok(LiteralType::Bool(l > r))
             }
             TokenType::GreaterEqual => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l >= r))
+                Ok(LiteralType::Bool(l >= r))
             }
             TokenType::Less => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l < r))
+                Ok(LiteralType::Bool(l < r))
             }
             TokenType::LessEqual => {
                 let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
-                Ok(LiteralType::BoolLiteral(l <= r))
+                Ok(LiteralType::Bool(l <= r))
             }
-            TokenType::EqualEqual => Ok(LiteralType::BoolLiteral(left == right)),
-            TokenType::BangEqual => Ok(LiteralType::BoolLiteral(left != right)),
+            TokenType::EqualEqual => Ok(LiteralType::Bool(left == right)),
+            TokenType::BangEqual => Ok(LiteralType::Bool(left != right)),
             _ => panic!("not a binary operator : {:?}", expr.operator),
         }
     }
@@ -201,12 +201,12 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         let right = self.evaluate(&expr.right)?;
 
         match expr.operator.get_type() {
-            TokenType::Bang => Ok(LiteralType::BoolLiteral(!self.is_truthy(&right))),
+            TokenType::Bang => Ok(LiteralType::Bool(!self.is_truthy(&right))),
             TokenType::Minus => {
                 let v = self.check_number_operand(&right, &expr.operator)?;
-                Ok(LiteralType::FloatLiteral(-v))
+                Ok(LiteralType::Float(-v))
             }
-            _ => Ok(LiteralType::NilLiteral),
+            _ => Ok(LiteralType::Nil),
         }
     }
 
@@ -379,7 +379,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
     fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), Exit> {
         let value = match *stmt.initializer {
             Some(ref init) => self.evaluate(init).map_err(Exit::Error)?,
-            None => LiteralType::NilLiteral,
+            None => LiteralType::Nil,
         };
 
         self.env
@@ -461,7 +461,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
 
         self.env
             .borrow_mut()
-            .define(&stmt.name.get_lexeme(), &LiteralType::NilLiteral);
+            .define(&stmt.name.get_lexeme(), &LiteralType::Nil);
 
         if stmt.super_class.is_some() {
             self.env = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&self.env)))));
@@ -590,14 +590,11 @@ mod tests {
     #[test]
     fn is_truthy() {
         let i = Interpreter::default();
-        assert_eq!(i.is_truthy(&LiteralType::NilLiteral), false);
-        assert_eq!(i.is_truthy(&LiteralType::FloatLiteral(5.0)), true);
-        assert_eq!(
-            i.is_truthy(&LiteralType::StringLiteral("abc".to_owned())),
-            true
-        );
-        assert_eq!(i.is_truthy(&LiteralType::BoolLiteral(true)), true);
-        assert_eq!(i.is_truthy(&LiteralType::BoolLiteral(false)), false);
+        assert_eq!(i.is_truthy(&LiteralType::Nil), false);
+        assert_eq!(i.is_truthy(&LiteralType::Float(5.0)), true);
+        assert_eq!(i.is_truthy(&LiteralType::String("abc".to_owned())), true);
+        assert_eq!(i.is_truthy(&LiteralType::Bool(true)), true);
+        assert_eq!(i.is_truthy(&LiteralType::Bool(false)), false);
     }
 
     #[test]
