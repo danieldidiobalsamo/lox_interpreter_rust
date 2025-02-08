@@ -320,35 +320,34 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
     }
 
     fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<LiteralType, String> {
-        if let Some(distance) = self.locals.get(&Expr::SuperExpr(expr.clone())) {
-            let super_class =
-                self.env
-                    .borrow()
-                    .get_at_str(*distance, "super", expr.method.get_line())?;
-            let object =
-                self.env
-                    .borrow()
-                    .get_at_str(*distance - 1, "this", expr.method.get_line())?;
+        let sup = &Expr::SuperExpr(expr.clone());
+        let Some(distance) = self.locals.get(sup) else {
+            panic!("Super hasn't been resolved correctly {}", sup);
+        };
 
-            if let LiteralType::Callable(Callable::LoxClass(c)) = &super_class {
-                if let LiteralType::Callable(Callable::LoxInstance(instance)) = object {
-                    match c.find_method(&expr.method.get_lexeme()) {
-                        Some(m) => {
-                            return Ok(LiteralType::Callable(Callable::Function(m.bind(instance))))
-                        }
+        let super_class =
+            self.env
+                .borrow()
+                .get_at_str(*distance, "super", expr.method.get_line())?;
+        let object = self
+            .env
+            .borrow()
+            .get_at_str(*distance - 1, "this", expr.method.get_line())?;
 
-                        None => {
-                            return Err(format!(
-                                "Undefined property '{}'.",
-                                expr.method.get_lexeme()
-                            ))
-                        }
-                    }
-                }
-            }
+        match (&super_class, object) {
+            (
+                LiteralType::Callable(Callable::LoxClass(c)),
+                LiteralType::Callable(Callable::LoxInstance(instance)),
+            ) => match c.find_method(&expr.method.get_lexeme()) {
+                Some(m) => Ok(LiteralType::Callable(Callable::Function(m.bind(instance)))),
+
+                None => Err(format!(
+                    "Undefined property '{}'.",
+                    expr.method.get_lexeme()
+                )),
+            },
+            _ => Err(format!("Bad super usage: '{}'.", expr.method.get_lexeme())),
         }
-
-        Err(format!("Bad super usage: '{}'.", expr.method.get_lexeme()))
     }
 }
 
