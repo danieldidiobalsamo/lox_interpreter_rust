@@ -1,6 +1,6 @@
 use crate::{
     environment::Environment,
-    interpreter::Interpreter,
+    interpreter::{Interpreter, RuntimeError},
     lox_error::Exit,
     stmt::{self},
     token::{LiteralType, Token},
@@ -77,8 +77,7 @@ impl LoxCallable for Function {
             return self
                 .closure
                 .borrow()
-                .get_at_str(0, "this", self.declaration.name.get_line())
-                .map_err(Exit::Error);
+                .get_at_str(0, "this", self.declaration.name.get_line());
         };
 
         match interpreter.execute_block(&self.declaration.body, env) {
@@ -118,10 +117,7 @@ impl LoxCallable for Clock {
         _arguments: &[LiteralType],
     ) -> Result<LiteralType, Exit> {
         let now = SystemTime::now();
-        let since_epoch = now
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| Exit::Error(e.to_string()))?;
-
+        let since_epoch = now.duration_since(UNIX_EPOCH).unwrap();
         Ok(LiteralType::Float(since_epoch.as_millis() as f64 / 1000.0))
     }
 
@@ -189,7 +185,7 @@ pub struct LoxInstance {
 }
 
 impl LoxInstance {
-    pub fn get(&self, name: &Token) -> Result<LiteralType, String> {
+    pub fn get(&self, name: &Token) -> Result<LiteralType, RuntimeError> {
         if let Some(value) = self.fields.get(&name.get_lexeme()) {
             return Ok(value.clone());
         }
@@ -198,7 +194,11 @@ impl LoxInstance {
             Some(method) => Ok(LiteralType::Callable(Callable::Function(
                 method.bind(Rc::new(RefCell::new(self.clone()))),
             ))),
-            None => Err(format!("Undefined property: {}", name.get_lexeme())),
+            None => Err(RuntimeError::UndefinedProperty {
+                lexeme: name.get_lexeme(),
+                line: name.get_line(),
+                property: name.get_lexeme(),
+            }),
         }
     }
 

@@ -1,6 +1,10 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use crate::token::{LiteralType, Token, TokenType};
+use crate::{
+    interpreter::RuntimeError,
+    lox_error::Exit,
+    token::{LiteralType, Token, TokenType},
+};
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Environment {
@@ -23,19 +27,23 @@ impl Environment {
         let _ = self.values.insert(name.to_string(), value.clone());
     }
 
-    pub fn get(&self, name: &Token) -> Result<LiteralType, String> {
+    pub fn get(&self, name: &Token) -> Result<LiteralType, Exit> {
         let var_name = name.get_lexeme();
 
         match self.values.get(&var_name) {
             Some(val) => Ok(val.clone()),
             None => match &self.enclosing {
                 Some(env) => env.borrow().get(name),
-                None => Err(format!("Undefined variable: '{var_name}'.")),
+                None => Err(Exit::Error(RuntimeError::UndefinedVariable {
+                    lexeme: name.get_lexeme(),
+                    line: name.get_line(),
+                    var_name,
+                })),
             },
         }
     }
 
-    pub fn assign(&mut self, name: &Token, value: &LiteralType) -> Result<(), String> {
+    pub fn assign(&mut self, name: &Token, value: &LiteralType) -> Result<(), Exit> {
         let var_name = name.get_lexeme();
 
         match self.values.get(&var_name) {
@@ -45,7 +53,11 @@ impl Environment {
             }
             None => match &self.enclosing {
                 Some(env) => env.borrow_mut().assign(name, value),
-                None => Err(format!("Undefined variable: '{var_name}'.")),
+                None => Err(Exit::Error(RuntimeError::UndefinedVariable {
+                    lexeme: name.get_lexeme(),
+                    line: name.get_line(),
+                    var_name,
+                })),
             },
         }
     }
@@ -55,7 +67,7 @@ impl Environment {
         distance: usize,
         name: &str,
         line: usize,
-    ) -> Result<LiteralType, String> {
+    ) -> Result<LiteralType, Exit> {
         let token = Token::Literal(
             TokenType::String,
             name.to_owned(),
@@ -66,13 +78,17 @@ impl Environment {
         self.get_at(distance, &token)
     }
 
-    pub fn get_at(&self, distance: usize, name: &Token) -> Result<LiteralType, String> {
+    pub fn get_at(&self, distance: usize, name: &Token) -> Result<LiteralType, Exit> {
         if distance == 0 {
             self.get(name)
         } else if let Some(e) = self.enclosing.as_ref() {
             e.borrow().get_at(distance - 1, name)
         } else {
-            Err(format!("no enclosing env containing {}", name.get_lexeme()))
+            Err(Exit::Error(RuntimeError::UndefinedVariableInEnclosing {
+                lexeme: name.get_lexeme(),
+                line: name.get_line(),
+                var_name: name.get_lexeme(),
+            }))
         }
     }
 
@@ -81,13 +97,17 @@ impl Environment {
         distance: usize,
         name: &Token,
         value: &LiteralType,
-    ) -> Result<(), String> {
+    ) -> Result<(), Exit> {
         if distance == 0 {
             self.define(&name.get_lexeme(), value);
         } else if let Some(e) = self.enclosing.as_ref() {
             e.borrow_mut().assign_at(distance - 1, name, value)?;
         } else {
-            return Err(format!("no enclosing env containing {value}"));
+            return Err(Exit::Error(RuntimeError::UndefinedVariableInEnclosing {
+                lexeme: name.get_lexeme(),
+                line: name.get_line(),
+                var_name: name.get_lexeme(),
+            }));
         }
 
         Ok(())

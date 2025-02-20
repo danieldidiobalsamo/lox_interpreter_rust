@@ -1,11 +1,33 @@
 use std::collections::HashMap;
 
+use thiserror::Error;
+
 use crate::{
     expr::{AstVisitor, Expr},
     interpreter::Interpreter,
     stmt::{Stmt, StmtVisitor},
     token::{LiteralType, Token},
 };
+
+#[derive(Debug, Clone, Error)]
+pub enum ResolverError {
+    #[error("Already a variable with this name in this scope")]
+    SameVarNameSameScope,
+    #[error("Can't read local variable in its own initializer.")]
+    ReadVarOwnInit,
+    #[error("{keyword} : can't use 'super' outside of a class.")]
+    SuperOutsideClass { keyword: String },
+    #[error("{keyword} : can't use 'super' in a class with no superclass.")]
+    SuperOutsideWithoutSuperClass { keyword: String },
+    #[error("Can't return from top-level code.")]
+    ReturnFromTopLevel,
+    #[error("Can't return a value from an initializer.")]
+    ReturnFromInit,
+    #[error("A class can't inherit from itself.")]
+    InheritSelf,
+    #[error("Can't use 'this' outside of a class.")]
+    ThisOutsideClass,
+}
 
 #[derive(Debug, Clone, Default, PartialEq)]
 enum FunctionType {
@@ -41,7 +63,7 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub fn resolve(&mut self, statements: &[Stmt]) -> Result<(), String> {
+    pub fn resolve(&mut self, statements: &[Stmt]) -> Result<(), ResolverError> {
         for statement in statements {
             self.resolve_stmt(statement)?;
         }
@@ -49,19 +71,19 @@ impl<'a> Resolver<'a> {
         Ok(())
     }
 
-    fn resolve_box_stmt(&mut self, statements: &[Box<Stmt>]) -> Result<(), String> {
+    fn resolve_box_stmt(&mut self, statements: &[Box<Stmt>]) -> Result<(), ResolverError> {
         for statement in statements {
             self.resolve_stmt(statement)?;
         }
         Ok(())
     }
 
-    fn resolve_stmt(&mut self, statement: &Stmt) -> Result<(), String> {
+    fn resolve_stmt(&mut self, statement: &Stmt) -> Result<(), ResolverError> {
         statement.accept(self)?;
         Ok(())
     }
 
-    fn resolve_expr(&mut self, expr: &Expr) -> Result<(), String> {
+    fn resolve_expr(&mut self, expr: &Expr) -> Result<(), ResolverError> {
         expr.accept(self)?;
 
         Ok(())
@@ -83,7 +105,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         function: &crate::stmt::Function,
         function_type: FunctionType,
-    ) -> Result<(), String> {
+    ) -> Result<(), ResolverError> {
         let enclosing_function = self.current_function.clone();
         self.current_function = function_type;
 
@@ -111,10 +133,10 @@ impl<'a> Resolver<'a> {
         self.scopes.pop();
     }
 
-    fn declare(&mut self, name: &Token) -> Result<(), String> {
+    fn declare(&mut self, name: &Token) -> Result<(), ResolverError> {
         if let Some(scope) = self.scopes.last_mut() {
             if scope.contains_key(&name.get_lexeme()) {
-                return Err("Already a variable with this name in this scope.".to_owned());
+                return Err(ResolverError::SameVarNameSameScope);
             }
 
             scope.insert(name.get_lexeme(), false);
@@ -130,35 +152,33 @@ impl<'a> Resolver<'a> {
     }
 }
 
-impl AstVisitor<Result<(), String>> for Resolver<'_> {
-    fn visit_literal(&mut self, _expr: &crate::expr::Literal) -> Result<(), String> {
+impl AstVisitor<Result<(), ResolverError>> for Resolver<'_> {
+    fn visit_literal(&mut self, _expr: &crate::expr::Literal) -> Result<(), ResolverError> {
         Ok(())
     }
 
-    fn visit_binary_expr(&mut self, expr: &crate::expr::Binary) -> Result<(), String> {
+    fn visit_binary_expr(&mut self, expr: &crate::expr::Binary) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.left)?;
         self.resolve_expr(&expr.right)?;
 
         Ok(())
     }
 
-    fn visit_grouping_expr(&mut self, expr: &crate::expr::Grouping) -> Result<(), String> {
+    fn visit_grouping_expr(&mut self, expr: &crate::expr::Grouping) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.expression)?;
         Ok(())
     }
 
-    fn visit_unary_expr(&mut self, expr: &crate::expr::Unary) -> Result<(), String> {
+    fn visit_unary_expr(&mut self, expr: &crate::expr::Unary) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.right)?;
         Ok(())
     }
 
-    fn visit_variable_expr(&mut self, expr: &crate::expr::Variable) -> Result<(), String> {
-        let error = "Can't read local variable in its own initializer.".to_owned();
-
+    fn visit_variable_expr(&mut self, expr: &crate::expr::Variable) -> Result<(), ResolverError> {
         if let Some(map) = self.scopes.last() {
             if let Some(val) = map.get(&expr.name.get_lexeme()) {
                 if !(*val) {
-                    return Err(error);
+                    return Err(ResolverError::ReadVarOwnInit);
                 }
             }
         }
@@ -167,21 +187,21 @@ impl AstVisitor<Result<(), String>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<(), String> {
+    fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.value)?;
         self.resolve_local(&Expr::Assign(expr.clone()), &expr.name);
 
         Ok(())
     }
 
-    fn visit_logical_expr(&mut self, expr: &crate::expr::Logical) -> Result<(), String> {
+    fn visit_logical_expr(&mut self, expr: &crate::expr::Logical) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.left)?;
         self.resolve_expr(&expr.right)?;
 
         Ok(())
     }
 
-    fn visit_call_expr(&mut self, expr: &crate::expr::Call) -> Result<(), String> {
+    fn visit_call_expr(&mut self, expr: &crate::expr::Call) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.callee)?;
 
         for arg in &expr.arguments {
@@ -191,58 +211,57 @@ impl AstVisitor<Result<(), String>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<(), String> {
+    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.object)?;
 
         Ok(())
     }
 
-    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<(), String> {
+    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<(), ResolverError> {
         self.resolve_expr(&expr.value)?;
         self.resolve_expr(&expr.object)?;
 
         Ok(())
     }
 
-    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<(), String> {
+    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<(), ResolverError> {
         if self.current_class == ClassType::None {
-            return Err("Can't use 'this' outside of a class".to_owned());
+            return Err(ResolverError::ThisOutsideClass);
         }
 
         self.resolve_local(&Expr::This(expr.clone()), &expr.keyword);
         Ok(())
     }
 
-    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<(), String> {
+    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<(), ResolverError> {
         match self.current_class {
             ClassType::Subclass => {
                 self.resolve_local(&Expr::SuperExpr(expr.clone()), &expr.keyword);
                 Ok(())
             }
-            ClassType::None => Err(format!(
-                "{} : can't use 'super' outside of a class.",
-                expr.keyword
-            )),
-            _ => Err(format!(
-                "{} : can't use 'super' in a class with no superclass.",
-                expr.keyword
-            )),
+            ClassType::None => Err(ResolverError::SuperOutsideClass {
+                keyword: expr.keyword.get_lexeme(),
+            }),
+
+            _ => Err(ResolverError::SuperOutsideWithoutSuperClass {
+                keyword: expr.keyword.get_lexeme(),
+            }),
         }
     }
 }
 
-impl StmtVisitor<Result<(), String>> for Resolver<'_> {
-    fn visit_expression(&mut self, stmt: &crate::stmt::Expression) -> Result<(), String> {
+impl StmtVisitor<Result<(), ResolverError>> for Resolver<'_> {
+    fn visit_expression(&mut self, stmt: &crate::stmt::Expression) -> Result<(), ResolverError> {
         self.resolve_expr(&stmt.expression)?;
         Ok(())
     }
 
-    fn visit_print(&mut self, stmt: &crate::stmt::Print) -> Result<(), String> {
+    fn visit_print(&mut self, stmt: &crate::stmt::Print) -> Result<(), ResolverError> {
         self.resolve_expr(&stmt.expression)?;
         Ok(())
     }
 
-    fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), String> {
+    fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), ResolverError> {
         self.declare(&stmt.name)?;
 
         if let Some(ref init) = *stmt.initializer {
@@ -254,7 +273,7 @@ impl StmtVisitor<Result<(), String>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_block(&mut self, stmt: &crate::stmt::Block) -> Result<(), String> {
+    fn visit_block(&mut self, stmt: &crate::stmt::Block) -> Result<(), ResolverError> {
         self.begin_scope();
         self.resolve_box_stmt(&stmt.statements)?;
         self.end_scope();
@@ -262,7 +281,7 @@ impl StmtVisitor<Result<(), String>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_if(&mut self, stmt: &crate::stmt::If) -> Result<(), String> {
+    fn visit_if(&mut self, stmt: &crate::stmt::If) -> Result<(), ResolverError> {
         self.resolve_expr(&stmt.condition)?;
         self.resolve_stmt(&stmt.then_branch)?;
 
@@ -273,14 +292,14 @@ impl StmtVisitor<Result<(), String>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_while(&mut self, stmt: &crate::stmt::While) -> Result<(), String> {
+    fn visit_while(&mut self, stmt: &crate::stmt::While) -> Result<(), ResolverError> {
         self.resolve_expr(&stmt.condition)?;
         self.resolve_stmt(&stmt.body)?;
 
         Ok(())
     }
 
-    fn visit_function(&mut self, stmt: &crate::stmt::Function) -> Result<(), String> {
+    fn visit_function(&mut self, stmt: &crate::stmt::Function) -> Result<(), ResolverError> {
         self.declare(&stmt.name)?;
         self.define(&stmt.name);
         self.resolve_function(stmt, FunctionType::Function)?;
@@ -288,16 +307,16 @@ impl StmtVisitor<Result<(), String>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_return(&mut self, stmt: &crate::stmt::Return) -> Result<(), String> {
+    fn visit_return(&mut self, stmt: &crate::stmt::Return) -> Result<(), ResolverError> {
         if self.current_function == FunctionType::None {
-            return Err("Can't return from top-level code".to_owned());
+            return Err(ResolverError::ReturnFromTopLevel);
         }
 
         if let Some(ref value) = *stmt.value {
             if self.current_function == FunctionType::Initializer {
                 if let Expr::Literal(value_expr) = value {
                     if value_expr.value != LiteralType::Nil {
-                        return Err("Can't return a value from an initializer".to_owned());
+                        return Err(ResolverError::ReturnFromInit);
                     }
                 }
             }
@@ -308,7 +327,7 @@ impl StmtVisitor<Result<(), String>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), String> {
+    fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), ResolverError> {
         let enclosing_class = self.current_class.clone();
         self.current_class = ClassType::Class;
 
@@ -317,7 +336,7 @@ impl StmtVisitor<Result<(), String>> for Resolver<'_> {
 
         if let Some(Expr::Variable(ref super_class)) = *stmt.super_class {
             if stmt.name.get_lexeme() == *super_class.name.get_lexeme() {
-                return Err("A class can't inherit from itself.".to_owned());
+                return Err(ResolverError::InheritSelf);
             }
 
             self.current_class = ClassType::Subclass;
