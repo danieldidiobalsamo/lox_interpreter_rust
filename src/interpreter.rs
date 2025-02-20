@@ -4,11 +4,67 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::rc::Rc;
 
+use thiserror::Error;
+
 use crate::environment::Environment;
 use crate::expr::{AstVisitor, Expr, Variable};
 use crate::lox_callable::{Callable, Clock, Function, LoxCallable, LoxClass};
-use crate::stmt::{Exit, Stmt, StmtVisitor};
+use crate::lox_error::{Exit, LoxError};
+use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
+
+#[derive(Debug, Clone, Error)]
+pub enum RuntimeError {
+    #[error("{lexeme} at line {line} : Operand must be a number")]
+    OperandNumber { lexeme: String, line: usize },
+    #[error("{lexeme} at line {line} : Operand must be a String")]
+    OperandString { lexeme: String, line: usize },
+    #[error("{lexeme} at line {line} : Can't divide by zero")]
+    ZeroDivision { lexeme: String, line: usize },
+    #[error("{lexeme} at line {line} : Expected {expected} arguments but got {got}")]
+    BadNbArgs {
+        lexeme: String,
+        line: usize,
+        expected: usize,
+        got: usize,
+    },
+    #[error("{lexeme} at line {line} : Undefined variable: '{var_name}'.")]
+    UndefinedVariable {
+        lexeme: String,
+        line: usize,
+        var_name: String,
+    },
+    #[error("{lexeme} at line {line} : no enclosing env containing {var_name}")]
+    UndefinedVariableInEnclosing {
+        lexeme: String,
+        line: usize,
+        var_name: String,
+    },
+    #[error("{lexeme} at line {line} : {operator:?} is not a logical operator")]
+    NotLogicalOperator {
+        lexeme: String,
+        line: usize,
+        operator: String,
+    },
+    #[error("Can only call functions and classes")]
+    OnlyCallFunctionsAndClasses,
+    #[error("{lexeme} at line {line} : Only instances have properties")]
+    OnlyInstancesHaveProperties { lexeme: String, line: usize },
+    #[error("{lexeme} at line {line} : Only instances have fields")]
+    OnlyInstancesHaveFields { lexeme: String, line: usize },
+    #[error("{lexeme} at line {line} : Undefined property {property}")]
+    UndefinedProperty {
+        lexeme: String,
+        line: usize,
+        property: String,
+    },
+
+    #[error("{lexeme} at line {line} : Bad super usage")]
+    BadSuperUsage { lexeme: String, line: usize },
+
+    #[error("Super class must be a class")]
+    SuperClassMustBeClass,
+}
 
 #[derive(Debug, Clone)]
 pub struct Interpreter {
@@ -38,10 +94,10 @@ impl Default for Interpreter {
 }
 
 impl Interpreter {
-    pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), String> {
+    pub fn interpret(&mut self, statements: &[Stmt]) -> Result<(), LoxError> {
         for statement in statements {
             if let Err(Exit::Error(e)) = self.execute(statement) {
-                return Err(e);
+                return Err(LoxError::Runtime(e));
             }
         }
 
@@ -73,7 +129,7 @@ impl Interpreter {
         statement.accept(self)
     }
 
-    fn evaluate(&mut self, expr: &Expr) -> Result<LiteralType, String> {
+    fn evaluate(&mut self, expr: &Expr) -> Result<LiteralType, Exit> {
         expr.accept(self)
     }
 
@@ -89,10 +145,17 @@ impl Interpreter {
         }
     }
 
-    fn check_number_operand(&self, operand: &LiteralType, operator: &Token) -> Result<f64, String> {
-        let error = format!("{operator:?} : Operand must be a number");
-
-        operand.get_float().map_err(|_| error)
+    fn check_number_operand(
+        &self,
+        operand: &LiteralType,
+        operator: &Token,
+    ) -> Result<f64, RuntimeError> {
+        operand
+            .get_float()
+            .map_err(|_| RuntimeError::OperandNumber {
+                lexeme: operator.get_lexeme(),
+                line: operator.get_line(),
+            })
     }
 
     fn check_number_operands(
@@ -100,7 +163,7 @@ impl Interpreter {
         left: &LiteralType,
         right: &LiteralType,
         operator: &Token,
-    ) -> Result<(f64, f64), String> {
+    ) -> Result<(f64, f64), RuntimeError> {
         Ok((
             self.check_number_operand(left, operator)?,
             self.check_number_operand(right, operator)?,
@@ -111,10 +174,13 @@ impl Interpreter {
         &self,
         operand: &LiteralType,
         operator: &Token,
-    ) -> Result<String, String> {
-        let error = format!("{operator:?} : Operand must be a string");
-
-        operand.get_string().map_err(|_| error)
+    ) -> Result<String, RuntimeError> {
+        operand
+            .get_string()
+            .map_err(|_| RuntimeError::OperandString {
+                lexeme: operator.get_lexeme(),
+                line: operator.get_line(),
+            })
     }
 
     fn check_string_operands(
@@ -122,14 +188,14 @@ impl Interpreter {
         left: &LiteralType,
         right: &LiteralType,
         operator: &Token,
-    ) -> Result<(String, String), String> {
+    ) -> Result<(String, String), RuntimeError> {
         Ok((
             self.check_string_operand(left, operator)?,
             self.check_string_operand(right, operator)?,
         ))
     }
 
-    fn look_up_variable(&mut self, name: &Token, expr: &Expr) -> Result<LiteralType, String> {
+    fn look_up_variable(&mut self, name: &Token, expr: &Expr) -> Result<LiteralType, Exit> {
         match self.locals.get(expr) {
             Some(distance) => self.env.borrow().get_at(*distance, name),
             None => self.globals.borrow().get(name),
@@ -137,54 +203,71 @@ impl Interpreter {
     }
 }
 
-impl AstVisitor<Result<LiteralType, String>> for Interpreter {
-    fn visit_literal(&mut self, expr: &crate::expr::Literal) -> Result<LiteralType, String> {
+impl AstVisitor<Result<LiteralType, Exit>> for Interpreter {
+    fn visit_literal(&mut self, expr: &crate::expr::Literal) -> Result<LiteralType, Exit> {
         Ok(expr.value.clone())
     }
 
-    fn visit_binary_expr(&mut self, expr: &crate::expr::Binary) -> Result<LiteralType, String> {
+    fn visit_binary_expr(&mut self, expr: &crate::expr::Binary) -> Result<LiteralType, Exit> {
         let left = self.evaluate(&expr.left)?;
         let right = self.evaluate(&expr.right)?;
 
         match expr.operator.get_type() {
             TokenType::Minus => {
-                let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
+                let (l, r) = self
+                    .check_number_operands(&left, &right, &expr.operator)
+                    .map_err(Exit::Error)?;
                 Ok(LiteralType::Float(l - r))
             }
             TokenType::Slash => {
-                let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
+                let (l, r) = self
+                    .check_number_operands(&left, &right, &expr.operator)
+                    .map_err(Exit::Error)?;
 
                 if r == 0. {
-                    return Err("Can't divide by 0".to_owned());
+                    return Err(Exit::Error(RuntimeError::ZeroDivision {
+                        lexeme: expr.operator.get_lexeme(),
+                        line: expr.operator.get_line(),
+                    }));
                 }
 
                 Ok(LiteralType::Float(l / r))
             }
             TokenType::Star => {
-                let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
+                let (l, r) = self
+                    .check_number_operands(&left, &right, &expr.operator)
+                    .map_err(Exit::Error)?;
                 Ok(LiteralType::Float(l * r))
             }
             TokenType::Plus => match self.check_number_operands(&left, &right, &expr.operator) {
                 Ok((l, r)) => Ok(LiteralType::Float(l + r)),
-                Err(e_1) => match self.check_string_operands(&left, &right, &expr.operator) {
+                Err(_) => match self.check_string_operands(&left, &right, &expr.operator) {
                     Ok((l, r)) => Ok(LiteralType::String(l + &r)),
-                    Err(e_2) => Err(format!("{e_1}\nOr {e_2}")),
+                    Err(e_2) => Err(Exit::Error(e_2)),
                 },
             },
             TokenType::Greater => {
-                let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
+                let (l, r) = self
+                    .check_number_operands(&left, &right, &expr.operator)
+                    .map_err(Exit::Error)?;
                 Ok(LiteralType::Bool(l > r))
             }
             TokenType::GreaterEqual => {
-                let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
+                let (l, r) = self
+                    .check_number_operands(&left, &right, &expr.operator)
+                    .map_err(Exit::Error)?;
                 Ok(LiteralType::Bool(l >= r))
             }
             TokenType::Less => {
-                let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
+                let (l, r) = self
+                    .check_number_operands(&left, &right, &expr.operator)
+                    .map_err(Exit::Error)?;
                 Ok(LiteralType::Bool(l < r))
             }
             TokenType::LessEqual => {
-                let (l, r) = self.check_number_operands(&left, &right, &expr.operator)?;
+                let (l, r) = self
+                    .check_number_operands(&left, &right, &expr.operator)
+                    .map_err(Exit::Error)?;
                 Ok(LiteralType::Bool(l <= r))
             }
             TokenType::EqualEqual => Ok(LiteralType::Bool(left == right)),
@@ -193,28 +276,30 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         }
     }
 
-    fn visit_grouping_expr(&mut self, expr: &crate::expr::Grouping) -> Result<LiteralType, String> {
+    fn visit_grouping_expr(&mut self, expr: &crate::expr::Grouping) -> Result<LiteralType, Exit> {
         self.evaluate(&expr.expression)
     }
 
-    fn visit_unary_expr(&mut self, expr: &crate::expr::Unary) -> Result<LiteralType, String> {
+    fn visit_unary_expr(&mut self, expr: &crate::expr::Unary) -> Result<LiteralType, Exit> {
         let right = self.evaluate(&expr.right)?;
 
         match expr.operator.get_type() {
             TokenType::Bang => Ok(LiteralType::Bool(!self.is_truthy(&right))),
             TokenType::Minus => {
-                let v = self.check_number_operand(&right, &expr.operator)?;
+                let v = self
+                    .check_number_operand(&right, &expr.operator)
+                    .map_err(Exit::Error)?;
                 Ok(LiteralType::Float(-v))
             }
             _ => Ok(LiteralType::Nil),
         }
     }
 
-    fn visit_variable_expr(&mut self, expr: &Variable) -> Result<LiteralType, String> {
+    fn visit_variable_expr(&mut self, expr: &Variable) -> Result<LiteralType, Exit> {
         self.look_up_variable(&expr.name, &Expr::Variable(expr.clone()))
     }
 
-    fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<LiteralType, String> {
+    fn visit_assign_expr(&mut self, expr: &crate::expr::Assign) -> Result<LiteralType, Exit> {
         let value = self.evaluate(&expr.value)?;
 
         if let Some(distance) = self.locals.get(&Expr::Assign(expr.clone())) {
@@ -228,7 +313,7 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
         Ok(value)
     }
 
-    fn visit_logical_expr(&mut self, expr: &crate::expr::Logical) -> Result<LiteralType, String> {
+    fn visit_logical_expr(&mut self, expr: &crate::expr::Logical) -> Result<LiteralType, Exit> {
         let left = self.evaluate(&expr.left)?;
 
         // check if left operand is false to check if we can short-circuit
@@ -243,13 +328,19 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
                     return Ok(left);
                 }
             }
-            _ => return Err(format!("{:?} is not a logical operator", expr.operator)),
+            _ => {
+                return Err(Exit::Error(RuntimeError::NotLogicalOperator {
+                    lexeme: expr.operator.get_lexeme(),
+                    line: expr.operator.get_line(),
+                    operator: expr.operator.get_lexeme(),
+                }));
+            }
         };
 
         self.evaluate(&expr.right)
     }
 
-    fn visit_call_expr(&mut self, expr: &crate::expr::Call) -> Result<LiteralType, String> {
+    fn visit_call_expr(&mut self, expr: &crate::expr::Call) -> Result<LiteralType, Exit> {
         let callee = self.evaluate(&expr.callee)?;
 
         let mut arguments = Vec::new();
@@ -262,47 +353,39 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
             match c {
                 Callable::Function(mut f) => {
                     if arguments.len() != f.arity() {
-                        Err(format!(
-                            "{} Expected {} arguments but got {}.",
-                            expr.paren,
-                            f.arity(),
-                            arguments.len()
-                        ))
+                        Err(Exit::Error(RuntimeError::BadNbArgs {
+                            lexeme: expr.paren.get_lexeme(),
+                            line: expr.paren.get_line(),
+                            expected: f.arity(),
+                            got: arguments.len(),
+                        }))
                     } else {
-                        Ok(f.call(self, &arguments).map_err(|e| match e {
-                            Exit::Return(l) => l.to_string(),
-                            Exit::Error(s) => s,
-                        })?)
+                        Ok(f.call(self, &arguments)?)
                     }
                 }
-                Callable::Clock(mut c) => Ok(c.call(self, &arguments).map_err(|e| match e {
-                    Exit::Return(l) => l.to_string(),
-                    Exit::Error(s) => s,
-                })?),
-                Callable::LoxClass(mut lox_class) => {
-                    Ok(lox_class.call(self, &[]).map_err(|e| match e {
-                        Exit::Return(l) => l.to_string(),
-                        Exit::Error(s) => s,
-                    })?)
-                }
-                _ => Err(String::from("Can only call functions and classes.")),
+                Callable::Clock(mut c) => Ok(c.call(self, &arguments)?),
+                Callable::LoxClass(mut lox_class) => Ok(lox_class.call(self, &[])?),
+                _ => return Err(Exit::Error(RuntimeError::OnlyCallFunctionsAndClasses)),
             }
         } else {
-            Err(String::from("Can only call functions and classes."))
+            Err(Exit::Error(RuntimeError::OnlyCallFunctionsAndClasses))
         }
     }
 
-    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<LiteralType, String> {
+    fn visit_get_expr(&mut self, expr: &crate::expr::Get) -> Result<LiteralType, Exit> {
         let object = self.evaluate(&expr.object)?;
 
         if let LiteralType::Callable(Callable::LoxInstance(object)) = object {
-            return object.borrow().get(&expr.name);
+            return object.borrow().get(&expr.name).map_err(Exit::Error);
         }
 
-        Err(format!("{} : Only instances have properties.", expr.name))
+        Err(Exit::Error(RuntimeError::OnlyInstancesHaveProperties {
+            lexeme: expr.name.get_lexeme(),
+            line: expr.name.get_line(),
+        }))
     }
 
-    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<LiteralType, String> {
+    fn visit_set_expr(&mut self, expr: &crate::expr::Set) -> Result<LiteralType, Exit> {
         let object = self.evaluate(&expr.object)?;
 
         if let LiteralType::Callable(Callable::LoxInstance(instance)) = object {
@@ -311,15 +394,17 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
 
             return Ok(value);
         }
-
-        Err(format!("{} : Only instances have fields.", expr.name))
+        Err(Exit::Error(RuntimeError::OnlyInstancesHaveFields {
+            lexeme: expr.name.get_lexeme(),
+            line: expr.name.get_line(),
+        }))
     }
 
-    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<LiteralType, String> {
+    fn visit_this_expr(&mut self, expr: &crate::expr::This) -> Result<LiteralType, Exit> {
         self.look_up_variable(&expr.keyword, &Expr::This(expr.clone()))
     }
 
-    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<LiteralType, String> {
+    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<LiteralType, Exit> {
         let sup = &Expr::SuperExpr(expr.clone());
         let Some(distance) = self.locals.get(sup) else {
             panic!("Super hasn't been resolved correctly {}", sup);
@@ -341,25 +426,30 @@ impl AstVisitor<Result<LiteralType, String>> for Interpreter {
             ) => match c.find_method(&expr.method.get_lexeme()) {
                 Some(m) => Ok(LiteralType::Callable(Callable::Function(m.bind(instance)))),
 
-                None => Err(format!(
-                    "Undefined property '{}'.",
-                    expr.method.get_lexeme()
-                )),
+                None => Err(Exit::Error(RuntimeError::UndefinedProperty {
+                    lexeme: expr.method.get_lexeme(),
+                    line: expr.method.get_line(),
+                    property: expr.method.get_lexeme(),
+                })),
             },
-            _ => Err(format!("Bad super usage: '{}'.", expr.method.get_lexeme())),
+
+            _ => Err(Exit::Error(RuntimeError::BadSuperUsage {
+                lexeme: expr.method.get_lexeme(),
+                line: expr.method.get_line(),
+            })),
         }
     }
 }
 
 impl StmtVisitor<Result<(), Exit>> for Interpreter {
     fn visit_expression(&mut self, expr: &crate::stmt::Expression) -> Result<(), Exit> {
-        let _ = self.evaluate(&expr.expression).map_err(Exit::Error)?;
+        let _ = self.evaluate(&expr.expression)?;
 
         Ok(())
     }
 
     fn visit_print(&mut self, expr: &crate::stmt::Print) -> Result<(), Exit> {
-        let value = self.evaluate(&expr.expression).map_err(Exit::Error)?;
+        let value = self.evaluate(&expr.expression)?;
 
         println!("{}", value);
 
@@ -377,7 +467,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
 
     fn visit_var(&mut self, stmt: &crate::stmt::Var) -> Result<(), Exit> {
         let value = match *stmt.initializer {
-            Some(ref init) => self.evaluate(init).map_err(Exit::Error)?,
+            Some(ref init) => self.evaluate(init)?,
             None => LiteralType::Nil,
         };
 
@@ -396,7 +486,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
     }
 
     fn visit_if(&mut self, stmt: &crate::stmt::If) -> Result<(), Exit> {
-        let cond = self.evaluate(&stmt.condition).map_err(Exit::Error)?;
+        let cond = self.evaluate(&stmt.condition)?;
 
         if self.is_truthy(&cond) {
             self.execute(&stmt.then_branch)?;
@@ -408,12 +498,12 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
     }
 
     fn visit_while(&mut self, stmt: &crate::stmt::While) -> Result<(), Exit> {
-        let mut cond = self.evaluate(&stmt.condition).map_err(Exit::Error)?;
+        let mut cond = self.evaluate(&stmt.condition)?;
 
         while self.is_truthy(&cond) {
             let _ = self.execute(&stmt.body);
 
-            cond = self.evaluate(&stmt.condition).map_err(Exit::Error)?;
+            cond = self.evaluate(&stmt.condition)?;
         }
 
         Ok(())
@@ -435,7 +525,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
 
     fn visit_return(&mut self, stmt: &crate::stmt::Return) -> Result<(), Exit> {
         if let Some(ref val) = *stmt.value {
-            let evaluated = self.evaluate(val).map_err(Exit::Error)?;
+            let evaluated = self.evaluate(val)?;
 
             // return Err to go to where the function call began, instead of propagating through Ok()
             // and continue the execution
@@ -447,12 +537,10 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
 
     fn visit_class(&mut self, stmt: &crate::stmt::Class) -> Result<(), Exit> {
         let super_class = if let Some(ref super_class) = *stmt.super_class {
-            if let LiteralType::Callable(Callable::LoxClass(c)) =
-                self.evaluate(super_class).map_err(Exit::Error)?
-            {
+            if let LiteralType::Callable(Callable::LoxClass(c)) = self.evaluate(super_class)? {
                 Some(c)
             } else {
-                return Err(Exit::Error("Superclass must be a class.".to_owned()));
+                return Err(Exit::Error(RuntimeError::SuperClassMustBeClass));
             }
         } else {
             None
@@ -497,8 +585,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
 
         self.env
             .borrow_mut()
-            .assign(&stmt.name, &LiteralType::Callable(class))
-            .map_err(Exit::Error)?;
+            .assign(&stmt.name, &LiteralType::Callable(class))?;
 
         Ok(())
     }
@@ -513,7 +600,7 @@ mod tests {
 
     use super::*;
 
-    use crate::scanner::Scanner;
+    use crate::{lox_error::LoxError, scanner::Scanner};
     use crate::{parser::Parser, resolver::Resolver};
 
     struct Setup {
@@ -532,7 +619,7 @@ mod tests {
             self.id
         }
 
-        fn get_statements(&self, code: &str) -> Result<Vec<Stmt>, String> {
+        fn get_statements(&self, code: &str) -> Result<Vec<Stmt>, LoxError> {
             let mut scanner = Scanner::new(code);
             let tokens = scanner.scan_tokens().unwrap();
 
@@ -540,7 +627,7 @@ mod tests {
             parser.parse()
         }
 
-        fn interpret_code(&mut self, code: &str) -> Result<String, String> {
+        fn interpret_code(&mut self, code: &str) -> Result<String, LoxError> {
             let dir = String::from("unit_tests_tmp_logs");
             if !Path::new(&dir).exists() {
                 fs::create_dir(&dir).unwrap();
@@ -558,7 +645,9 @@ mod tests {
             let statements = self.get_statements(code)?;
 
             let mut resolver = Resolver::new(&mut i);
-            resolver.resolve(&statements)?;
+            resolver
+                .resolve(&statements)
+                .map_err(|e| LoxError::Resolver(e))?;
 
             i.interpret(&statements)?;
 
@@ -689,10 +778,7 @@ mod tests {
             .unwrap();
         check_results(&file_name, &vec!["5.25"]);
 
-        assert_eq!(
-            setup.lock().unwrap().interpret_code("2.5/0;"),
-            Err("Can't divide by 0".to_owned())
-        );
+        assert!(setup.lock().unwrap().interpret_code("2.5/0;").is_err());
     }
 
     #[test]

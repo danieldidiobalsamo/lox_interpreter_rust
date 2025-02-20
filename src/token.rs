@@ -179,7 +179,7 @@ impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Simple(token_type, lexeme, line) => {
-                write!(f, "{} {} {}", token_type, lexeme, line)
+                write!(f, "{} '{}' at line {}", token_type, lexeme, line)
             }
             Token::Literal(token_type, lexeme, literal, line) => {
                 write!(f, "{} {} {} {}", token_type, lexeme, literal, line)
