@@ -1,9 +1,41 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
+
+use thiserror::Error;
 
 use crate::{
-    build_error_message,
+    lox_error::LoxError,
     token::{LiteralType, Token, TokenType},
 };
+
+#[derive(Debug, Clone, Error)]
+pub enum ScannerError {
+    #[error("[line {line}] Unexpected char: {c}")]
+    UnexpectedChar { line: usize, c: char },
+    #[error("[line {line}] Unterminated string")]
+    UnterminatedString { line: usize },
+    #[error("[line {line}] Unterminated float")]
+    UnterminatedFloat { line: usize },
+}
+
+#[derive(Debug, Clone)]
+pub struct ScannerErrorList {
+    errors: Vec<ScannerError>,
+}
+
+impl Display for ScannerErrorList {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut out = String::new();
+
+        for e in &self.errors {
+            out += &format!("{e}\n");
+        }
+
+        write!(f, "{}", out)
+    }
+}
 
 pub struct Scanner<'a> {
     source: &'a str,
@@ -12,7 +44,7 @@ pub struct Scanner<'a> {
     line: usize,
     start_lexeme: usize,
     current: usize,
-    error_log: String,
+    error_log: Vec<ScannerError>,
     last: usize,
     keywords: HashMap<&'static str, TokenType>,
 }
@@ -26,7 +58,7 @@ impl<'a> Scanner<'a> {
             line: 1,
             start_lexeme: 0,
             current: 0,
-            error_log: String::new(),
+            error_log: Vec::new(),
             last: source.len(),
             keywords: HashMap::from([
                 ("and", TokenType::And),
@@ -49,10 +81,12 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<Vec<Token>, &str> {
+    pub fn scan_tokens(&mut self) -> Result<Vec<Token>, LoxError> {
         // if scan_tokens() has already been called
         if !self.tokens.is_empty() || !self.error_log.is_empty() {
-            return self.get_scan_results();
+            return self
+                .get_scan_results()
+                .map_err(|e| LoxError::Scanner(ScannerErrorList { errors: e.to_vec() }));
         }
 
         while !self.is_last_index(self.current) {
@@ -65,6 +99,7 @@ impl<'a> Scanner<'a> {
             .push(Token::Simple(TokenType::Eof, String::new(), self.line));
 
         self.get_scan_results()
+            .map_err(|e| LoxError::Scanner(ScannerErrorList { errors: e.to_vec() }))
     }
 
     fn scan_token(&mut self) {
@@ -137,7 +172,8 @@ impl<'a> Scanner<'a> {
                 }
 
                 if self.is_last_index(self.current + 1) {
-                    self.error_log += &build_error_message(self.line, "", "Unterminated string");
+                    self.error_log
+                        .push(ScannerError::UnterminatedString { line: self.line });
                 } else {
                     self.current += 1; // closing "
                     let literal = &self.source[self.start_lexeme + 1..self.current];
@@ -156,7 +192,8 @@ impl<'a> Scanner<'a> {
 
                 if current_char.is_some() && *current_char.unwrap() == '.' {
                     if next_char.is_none() || !next_char.unwrap().is_ascii_digit() {
-                        self.error_log += &build_error_message(self.line, "", "Unterminated float");
+                        self.error_log
+                            .push(ScannerError::UnterminatedFloat { line: self.line });
                     } else if next_char.unwrap().is_ascii_digit() {
                         self.current += 1; // consume '.'
                         self.advance_until_not_digit();
@@ -188,13 +225,13 @@ impl<'a> Scanner<'a> {
                 self.add_token(token_type);
             }
             _ => {
-                self.error_log +=
-                    &build_error_message(self.line, "", &format!("Unexpected character: {c}"));
+                self.error_log
+                    .push(ScannerError::UnexpectedChar { line: self.line, c });
             }
         }
     }
 
-    fn get_scan_results(&self) -> Result<Vec<Token>, &str> {
+    fn get_scan_results(&self) -> Result<Vec<Token>, &[ScannerError]> {
         if self.error_log.is_empty() {
             Ok(self.tokens.clone())
         } else {

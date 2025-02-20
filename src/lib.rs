@@ -9,6 +9,7 @@ mod environment;
 mod expr;
 mod interpreter;
 mod lox_callable;
+mod lox_error;
 mod parser;
 mod resolver;
 mod scanner;
@@ -105,12 +106,4 @@ impl Lox {
             }
         };
     }
-}
-
-pub fn print_error(line: usize, msg: &str) {
-    eprintln!("{}", build_error_message(line, "", msg));
-}
-
-pub fn build_error_message(line: usize, location: &str, msg: &str) -> String {
-    format!("[line {line}] Error {location}: {msg}")
 }

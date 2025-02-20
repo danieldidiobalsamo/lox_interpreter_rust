@@ -1,9 +1,6 @@
 use std::fmt::Display;
 
-use crate::{
-    expr::Expr,
-    token::{LiteralType, Token},
-};
+use crate::{expr::Expr, token::Token};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Stmt {
@@ -32,12 +29,6 @@ impl Display for Stmt {
             Stmt::Class(_) => write!(f, "Class"),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum Exit {
-    Return(LiteralType),
-    Error(String),
 }
 
 pub trait StmtVisitor<T> {

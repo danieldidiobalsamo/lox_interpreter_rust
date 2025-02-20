@@ -1,7 +1,8 @@
 use crate::{
     environment::Environment,
     interpreter::Interpreter,
-    stmt::{self, Exit},
+    lox_error::Exit,
+    stmt::{self},
     token::{LiteralType, Token},
 };
 use std::{

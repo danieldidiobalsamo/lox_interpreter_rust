@@ -7,7 +7,8 @@ use std::rc::Rc;
 use crate::environment::Environment;
 use crate::expr::{AstVisitor, Expr, Variable};
 use crate::lox_callable::{Callable, Clock, Function, LoxCallable, LoxClass};
-use crate::stmt::{Exit, Stmt, StmtVisitor};
+use crate::lox_error::Exit;
+use crate::stmt::{Stmt, StmtVisitor};
 use crate::token::{LiteralType, Token, TokenType};
 
 #[derive(Debug, Clone)]

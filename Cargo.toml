@@ -3,6 +3,9 @@ name = "lox_interpreter_rust"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+thiserror = "2"
+
 [dependencies.uuid]
 version = "1.12.1"
 features = [
