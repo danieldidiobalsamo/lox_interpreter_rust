@@ -1,3 +1,4 @@
+use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
@@ -5,9 +6,41 @@ use crate::{
         Assign, Binary, Call, Expr, Grouping, Literal, Logical, Set, SuperExpr, This, Unary,
         Variable,
     },
+    lox_error::LoxError,
     stmt::{self, Block, Class, Expression, If, Print, Return, Stmt, Var, While},
     token::{LiteralType, Token, TokenType},
 };
+
+#[derive(Debug, Clone, Error)]
+pub enum ParserError {
+    #[error("'{lexeme}' at line {line} : Expect '{c}' {msg}.")]
+    ExpectChar {
+        lexeme: String,
+        line: usize,
+        c: char,
+        msg: String,
+    },
+    #[error("\"{lexeme}\" at line {line} : Expect class name.")]
+    ExpectClass { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Expect superclass name.")]
+    ExpectSuperClass { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Expect superclass method name.")]
+    ExpectSuperClassMethod { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Expect function name.")]
+    ExpectFunction { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Expect parameter name.")]
+    ExpectParameter { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Expect variable name.")]
+    ExpectVariable { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Expect property identifier after '.'.")]
+    ExpectProperty { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Expect expression")]
+    ExpectExpression { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Can't have more than 255 arguments.")]
+    ArgumentsLimit { lexeme: String, line: usize },
+    #[error("\"{lexeme}\" at line {line} : Invalid assignment target")]
+    InvalidAssignment { lexeme: String, line: usize },
+}
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -19,7 +52,7 @@ impl Parser {
         Self { tokens, current: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Stmt>, String> {
+    pub fn parse(&mut self) -> Result<Vec<Stmt>, LoxError> {
         let mut statements = Vec::new();
 
         while !self.is_at_end() {
@@ -27,7 +60,7 @@ impl Parser {
                 Ok(d) => statements.push(d),
                 Err(e) => {
                     self.synchronize();
-                    return Err(e);
+                    return Err(LoxError::Parser(e));
                 }
             }
         }
@@ -35,7 +68,7 @@ impl Parser {
         Ok(statements)
     }
 
-    fn declaration(&mut self) -> Result<Stmt, String> {
+    fn declaration(&mut self) -> Result<Stmt, ParserError> {
         if self.match_token_type(&[TokenType::Class]) {
             return self.class_declaration();
         }
@@ -57,11 +90,23 @@ impl Parser {
         self.statement()
     }
 
-    fn class_declaration(&mut self) -> Result<Stmt, String> {
-        let name = self.consume(TokenType::Identifier, "Expect class name.")?;
+    fn class_declaration(&mut self) -> Result<Stmt, ParserError> {
+        let name = self.consume(
+            TokenType::Identifier,
+            ParserError::ExpectClass {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+            },
+        )?;
 
         let super_class = if self.match_token_type(&[TokenType::Less]) {
-            let _ = self.consume(TokenType::Identifier, "Expect superclass name.")?;
+            let _ = self.consume(
+                TokenType::Identifier,
+                ParserError::ExpectSuperClass {
+                    lexeme: self.current_lexeme(),
+                    line: self.current_line(),
+                },
+            )?;
 
             Some(Expr::Variable(Variable {
                 uuid: Uuid::new_v4(),
@@ -71,7 +116,15 @@ impl Parser {
             None
         };
 
-        let _ = self.consume(TokenType::LeftBrace, "Expect '{' before class body.")?;
+        let _ = self.consume(
+            TokenType::LeftBrace,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '{',
+                msg: "before class body".to_owned(),
+            },
+        )?;
 
         let mut methods = Vec::new();
 
@@ -79,7 +132,15 @@ impl Parser {
             methods.push(Box::new(self.function()?));
         }
 
-        let _ = self.consume(TokenType::RightBrace, "Expect '}' after class body.")?;
+        let _ = self.consume(
+            TokenType::RightBrace,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '}',
+                msg: "after class body".to_owned(),
+            },
+        )?;
 
         Ok(Stmt::Class(Class {
             name,
@@ -88,19 +149,42 @@ impl Parser {
         }))
     }
 
-    fn function(&mut self) -> Result<Stmt, String> {
-        let name = self.consume(TokenType::Identifier, "Expect function name.")?;
-        let _ = self.consume(TokenType::LeftParen, "Expect '(' after function name.")?;
+    fn function(&mut self) -> Result<Stmt, ParserError> {
+        let name = self.consume(
+            TokenType::Identifier,
+            ParserError::ExpectFunction {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+            },
+        )?;
+        let _ = self.consume(
+            TokenType::LeftParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '(',
+                msg: "after function name".to_owned(),
+            },
+        )?;
 
         let mut params = Vec::new();
 
         if !self.check(&TokenType::RightParen) {
             loop {
                 if params.len() >= 255 {
-                    return Err("Can't have more than 255 parameters.".to_owned());
+                    return Err(ParserError::ArgumentsLimit {
+                        lexeme: self.current_lexeme(),
+                        line: self.current_line(),
+                    });
                 }
 
-                params.push(self.consume(TokenType::Identifier, "Expect parameter name")?);
+                params.push(self.consume(
+                    TokenType::Identifier,
+                    ParserError::ExpectParameter {
+                        lexeme: self.current_lexeme(),
+                        line: self.current_line(),
+                    },
+                )?);
 
                 if !self.match_token_type(&[TokenType::Comma]) {
                     break;
@@ -108,16 +192,38 @@ impl Parser {
             }
         }
 
-        let _ = self.consume(TokenType::RightParen, "Expect ')' after parameter name.")?;
-        let _ = self.consume(TokenType::LeftBrace, "Expect '{' before function body.")?;
+        let _ = self.consume(
+            TokenType::RightParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ')',
+                msg: "after parameter name".to_owned(),
+            },
+        )?;
+        let _ = self.consume(
+            TokenType::LeftBrace,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '{',
+                msg: "before function body".to_owned(),
+            },
+        )?;
 
         let body = self.block()?;
 
         Ok(Stmt::Function(stmt::Function { name, params, body }))
     }
 
-    fn var_declaration(&mut self) -> Result<Stmt, String> {
-        let name = self.consume(TokenType::Identifier, "Expect variable name.")?;
+    fn var_declaration(&mut self) -> Result<Stmt, ParserError> {
+        let name = self.consume(
+            TokenType::Identifier,
+            ParserError::ExpectVariable {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+            },
+        )?;
 
         let initializer = if self.match_token_type(&[TokenType::Equal]) {
             Some(self.expression()?)
@@ -127,7 +233,12 @@ impl Parser {
 
         let _ = self.consume(
             TokenType::Semicolon,
-            "Expect ';' after variable declaration",
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ';',
+                msg: "after variable declaration".to_owned(),
+            },
         )?;
 
         Ok(Stmt::Var(Var {
@@ -136,7 +247,7 @@ impl Parser {
         }))
     }
 
-    fn statement(&mut self) -> Result<Stmt, String> {
+    fn statement(&mut self) -> Result<Stmt, ParserError> {
         if self.match_token_type(&[TokenType::For]) {
             return self.for_statement();
         }
@@ -166,7 +277,7 @@ impl Parser {
         self.expression_statement()
     }
 
-    fn return_statement(&mut self) -> Result<Stmt, String> {
+    fn return_statement(&mut self) -> Result<Stmt, ParserError> {
         let keyword = self.previous().clone();
 
         let value = if !self.check(&TokenType::Semicolon) {
@@ -178,7 +289,15 @@ impl Parser {
             })
         };
 
-        let _ = self.consume(TokenType::Semicolon, "Expect ';' after return value")?;
+        let _ = self.consume(
+            TokenType::Semicolon,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ';',
+                msg: "after return value".to_owned(),
+            },
+        )?;
 
         Ok(Stmt::Return(Return {
             keyword,
@@ -186,8 +305,16 @@ impl Parser {
         }))
     }
 
-    fn for_statement(&mut self) -> Result<Stmt, String> {
-        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.")?;
+    fn for_statement(&mut self) -> Result<Stmt, ParserError> {
+        self.consume(
+            TokenType::LeftParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '(',
+                msg: "after for".to_owned(),
+            },
+        )?;
 
         let initializer = if self.match_token_type(&[TokenType::Semicolon]) {
             None
@@ -203,7 +330,15 @@ impl Parser {
             None
         };
 
-        self.consume(TokenType::Semicolon, "Expect ';' after for loop condition.")?;
+        self.consume(
+            TokenType::Semicolon,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ';',
+                msg: "after for loop condition".to_owned(),
+            },
+        )?;
 
         let increment = if !self.check(&TokenType::RightParen) {
             Some(self.expression()?)
@@ -211,7 +346,15 @@ impl Parser {
             None
         };
 
-        self.consume(TokenType::RightParen, "Expect ')' after for clauses.")?;
+        self.consume(
+            TokenType::RightParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ')',
+                msg: "after for clauses".to_owned(),
+            },
+        )?;
 
         let mut body = self.statement()?;
 
@@ -247,10 +390,26 @@ impl Parser {
         Ok(body)
     }
 
-    fn while_statement(&mut self) -> Result<Stmt, String> {
-        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.")?;
+    fn while_statement(&mut self) -> Result<Stmt, ParserError> {
+        self.consume(
+            TokenType::LeftParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '(',
+                msg: "after while".to_owned(),
+            },
+        )?;
         let condition = self.expression()?;
-        self.consume(TokenType::RightParen, "Expect ')' after while condition.")?;
+        self.consume(
+            TokenType::RightParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ')',
+                msg: "after while condition".to_owned(),
+            },
+        )?;
 
         let body = self.statement()?;
 
@@ -260,10 +419,26 @@ impl Parser {
         }))
     }
 
-    fn if_statement(&mut self) -> Result<Stmt, String> {
-        let _ = self.consume(TokenType::LeftParen, "Expect '(' after 'if'.")?;
+    fn if_statement(&mut self) -> Result<Stmt, ParserError> {
+        let _ = self.consume(
+            TokenType::LeftParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '(',
+                msg: "after if".to_owned(),
+            },
+        )?;
         let condition = self.expression()?;
-        let _ = self.consume(TokenType::RightParen, "Expect ')' after if condition.")?;
+        let _ = self.consume(
+            TokenType::RightParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ')',
+                msg: "after if condition".to_owned(),
+            },
+        )?;
 
         let then_branch = self.statement()?;
         let else_branch = if self.match_token_type(&[TokenType::Else]) {
@@ -280,41 +455,65 @@ impl Parser {
         }))
     }
 
-    fn block(&mut self) -> Result<Vec<Box<Stmt>>, String> {
+    fn block(&mut self) -> Result<Vec<Box<Stmt>>, ParserError> {
         let mut statements = Vec::new();
 
         while !self.check(&TokenType::RightBrace) && !self.is_at_end() {
             statements.push(Box::new(self.declaration()?));
         }
 
-        self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
+        self.consume(
+            TokenType::RightBrace,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: '}',
+                msg: "after block".to_owned(),
+            },
+        )?;
 
         Ok(statements)
     }
 
-    fn print_statement(&mut self) -> Result<Stmt, String> {
+    fn print_statement(&mut self) -> Result<Stmt, ParserError> {
         let val = self.expression()?;
-        let _ = self.consume(TokenType::Semicolon, "Expect ';' after value.")?;
+        let _ = self.consume(
+            TokenType::Semicolon,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ';',
+                msg: "after value".to_owned(),
+            },
+        )?;
 
         Ok(Stmt::Print(Print {
             expression: Box::new(val),
         }))
     }
 
-    fn expression_statement(&mut self) -> Result<Stmt, String> {
+    fn expression_statement(&mut self) -> Result<Stmt, ParserError> {
         let expr = self.expression()?;
-        let _ = self.consume(TokenType::Semicolon, "Expect ';' after expression.")?;
+        let _ = self.consume(
+            TokenType::Semicolon,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ';',
+                msg: "after expression".to_owned(),
+            },
+        )?;
 
         Ok(Stmt::Expression(Expression {
             expression: Box::new(expr),
         }))
     }
 
-    fn expression(&mut self) -> Result<Expr, String> {
+    fn expression(&mut self) -> Result<Expr, ParserError> {
         self.assigment()
     }
 
-    fn assigment(&mut self) -> Result<Expr, String> {
+    fn assigment(&mut self) -> Result<Expr, ParserError> {
         let expr = self.or()?;
 
         if self.match_token_type(&[TokenType::Equal]) {
@@ -334,14 +533,17 @@ impl Parser {
                     value: Box::new(value),
                 }));
             } else {
-                return Err("Invalid assignment target.".to_owned());
+                return Err(ParserError::InvalidAssignment {
+                    lexeme: self.current_lexeme(),
+                    line: self.current_line(),
+                });
             }
         }
 
         Ok(expr)
     }
 
-    fn or(&mut self) -> Result<Expr, String> {
+    fn or(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.and()?;
 
         while self.match_token_type(&[TokenType::Or]) {
@@ -359,7 +561,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn and(&mut self) -> Result<Expr, String> {
+    fn and(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.equality()?;
 
         while self.match_token_type(&[TokenType::And]) {
@@ -377,7 +579,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn equality(&mut self) -> Result<Expr, String> {
+    fn equality(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.comparison()?;
 
         while self.match_token_type(&[TokenType::BangEqual, TokenType::EqualEqual]) {
@@ -395,7 +597,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> Result<Expr, String> {
+    fn comparison(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.term()?;
 
         while self.match_token_type(&[
@@ -418,7 +620,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn term(&mut self) -> Result<Expr, String> {
+    fn term(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.factor()?;
 
         while self.match_token_type(&[TokenType::Minus, TokenType::Plus]) {
@@ -436,7 +638,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expr, String> {
+    fn factor(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.unary()?;
 
         while self.match_token_type(&[TokenType::Slash, TokenType::Star]) {
@@ -454,7 +656,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expr, String> {
+    fn unary(&mut self) -> Result<Expr, ParserError> {
         if self.match_token_type(&[TokenType::Bang, TokenType::Minus]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
@@ -469,7 +671,7 @@ impl Parser {
         self.call()
     }
 
-    fn call(&mut self) -> Result<Expr, String> {
+    fn call(&mut self) -> Result<Expr, ParserError> {
         let mut expr = self.primary()?;
 
         loop {
@@ -478,7 +680,10 @@ impl Parser {
             } else if self.match_token_type(&[TokenType::Dot]) {
                 let name = self.consume(
                     TokenType::Identifier,
-                    "Expect property identifier after '.'",
+                    ParserError::ExpectProperty {
+                        lexeme: self.current_lexeme(),
+                        line: self.current_line(),
+                    },
                 )?;
 
                 expr = Expr::Get(crate::expr::Get {
@@ -492,13 +697,16 @@ impl Parser {
         }
     }
 
-    fn finish_call(&mut self, callee: Expr) -> Result<Expr, String> {
+    fn finish_call(&mut self, callee: Expr) -> Result<Expr, ParserError> {
         let mut arguments = Vec::new();
 
         if !self.check(&TokenType::RightParen) {
             loop {
                 if arguments.len() >= 255 {
-                    return Err(String::from("Can't have more than 255 arguments."));
+                    return Err(ParserError::ArgumentsLimit {
+                        lexeme: self.current_lexeme(),
+                        line: self.current_line(),
+                    });
                 }
 
                 arguments.push(Box::new(self.expression()?));
@@ -509,7 +717,15 @@ impl Parser {
             }
         }
 
-        let paren = self.consume(TokenType::RightParen, "Expect ')' after arguments.")?;
+        let paren = self.consume(
+            TokenType::RightParen,
+            ParserError::ExpectChar {
+                lexeme: self.current_lexeme(),
+                line: self.current_line(),
+                c: ')',
+                msg: "after arguments".to_owned(),
+            },
+        )?;
 
         Ok(Expr::Call(Call {
             uuid: Uuid::new_v4(),
@@ -519,7 +735,7 @@ impl Parser {
         }))
     }
 
-    fn primary(&mut self) -> Result<Expr, String> {
+    fn primary(&mut self) -> Result<Expr, ParserError> {
         if self.match_token_type(&[TokenType::False]) {
             return Ok(Expr::Literal(Literal {
                 uuid: Uuid::new_v4(),
@@ -552,8 +768,22 @@ impl Parser {
 
         if self.match_token_type(&[TokenType::Super]) {
             let keyword = self.previous().clone();
-            let _ = self.consume(TokenType::Dot, "Expect '.' after super.")?;
-            let method = self.consume(TokenType::Identifier, "Expect superclass method name.")?;
+            let _ = self.consume(
+                TokenType::Dot,
+                ParserError::ExpectChar {
+                    lexeme: self.current_lexeme(),
+                    line: self.current_line(),
+                    c: '.',
+                    msg: "after super".to_owned(),
+                },
+            )?;
+            let method = self.consume(
+                TokenType::Identifier,
+                ParserError::ExpectSuperClassMethod {
+                    lexeme: self.current_lexeme(),
+                    line: self.current_line(),
+                },
+            )?;
 
             return Ok(Expr::SuperExpr(SuperExpr {
                 uuid: Uuid::new_v4(),
@@ -579,7 +809,15 @@ impl Parser {
         if self.match_token_type(&[TokenType::LeftParen]) {
             let expr = self.expression()?;
 
-            let _ = self.consume(TokenType::RightParen, "Expect ')' after expression.")?;
+            let _ = self.consume(
+                TokenType::RightParen,
+                ParserError::ExpectChar {
+                    lexeme: self.current_lexeme(),
+                    line: self.current_line(),
+                    c: ')',
+                    msg: "after expresson".to_owned(),
+                },
+            )?;
 
             return Ok(Expr::Grouping(Grouping {
                 uuid: Uuid::new_v4(),
@@ -587,19 +825,18 @@ impl Parser {
             }));
         }
 
-        Err(self.build_error(&self.peek().clone(), "Expect expression."))
+        Err(ParserError::ExpectExpression {
+            lexeme: self.current_lexeme(),
+            line: self.current_line(),
+        })
     }
 
-    fn build_error(&mut self, token: &Token, msg: &str) -> String {
-        format!("Error with token {token:?} : {msg}\n")
-    }
-
-    fn consume(&mut self, token_type: TokenType, msg: &str) -> Result<Token, String> {
+    fn consume(&mut self, token_type: TokenType, error: ParserError) -> Result<Token, ParserError> {
         if self.check(&token_type) {
             return Ok((*self.advance()).clone());
         }
 
-        Err(self.build_error(&self.peek().clone(), msg))
+        Err(error)
     }
 
     fn match_token_type(&mut self, tokens_type: &[TokenType]) -> bool {
@@ -611,6 +848,14 @@ impl Parser {
         }
 
         false
+    }
+
+    fn current_lexeme(&self) -> String {
+        self.peek().get_lexeme()
+    }
+
+    fn current_line(&self) -> usize {
+        self.peek().get_line()
     }
 
     fn previous(&self) -> &Token {

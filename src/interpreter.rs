@@ -514,7 +514,7 @@ mod tests {
 
     use super::*;
 
-    use crate::scanner::Scanner;
+    use crate::{lox_error::LoxError, scanner::Scanner};
     use crate::{parser::Parser, resolver::Resolver};
 
     struct Setup {
@@ -533,7 +533,7 @@ mod tests {
             self.id
         }
 
-        fn get_statements(&self, code: &str) -> Result<Vec<Stmt>, String> {
+        fn get_statements(&self, code: &str) -> Result<Vec<Stmt>, LoxError> {
             let mut scanner = Scanner::new(code);
             let tokens = scanner.scan_tokens().unwrap();
 
@@ -556,7 +556,7 @@ mod tests {
 
             let _ = File::create(&name).unwrap();
 
-            let statements = self.get_statements(code)?;
+            let statements = self.get_statements(code).map_err(|e| e.to_string())?;
 
             let mut resolver = Resolver::new(&mut i);
             resolver.resolve(&statements)?;

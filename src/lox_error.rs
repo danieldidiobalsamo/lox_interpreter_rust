@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::parser::ParserError;
 use crate::scanner::ScannerErrorList;
 use crate::token::LiteralType;
 
@@ -8,7 +9,7 @@ pub enum LoxError {
     #[error("Scanning error: {0}")]
     Scanner(ScannerErrorList),
     #[error("Parsing error: {0}")]
-    Parser(String),
+    Parser(ParserError),
     #[error("Runtime error: {0}")]
     Interpreter(String),
 }
