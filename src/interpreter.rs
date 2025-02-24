@@ -361,7 +361,7 @@ impl AstVisitor<Result<LiteralType, Exit>> for Interpreter {
                 }
                 Callable::Clock(mut c) => Ok(c.call(self, &arguments)?),
                 Callable::LoxClass(mut lox_class) => Ok(lox_class.call(self, &[])?),
-                _ => return Err(Exit::Error(RuntimeError::OnlyCallFunctionsAndClasses)),
+                _ => Err(Exit::Error(RuntimeError::OnlyCallFunctionsAndClasses)),
             }
         } else {
             Err(Exit::Error(RuntimeError::OnlyCallFunctionsAndClasses))
@@ -400,8 +400,8 @@ impl AstVisitor<Result<LiteralType, Exit>> for Interpreter {
         self.look_up_variable(&expr.keyword, &Expr::This(expr.clone()))
     }
 
-    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<LiteralType, Exit> {
-        let sup = &Expr::SuperExpr(expr.clone());
+    fn visit_super_expr(&mut self, expr: &crate::expr::Super) -> Result<LiteralType, Exit> {
+        let sup = &Expr::Super(expr.clone());
         let Some(distance) = self.locals.get(sup) else {
             panic!("Super hasn't been resolved correctly {}", sup);
         };

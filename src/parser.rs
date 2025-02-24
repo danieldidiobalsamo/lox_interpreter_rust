@@ -3,8 +3,7 @@ use uuid::Uuid;
 
 use crate::{
     expr::{
-        Assign, Binary, Call, Expr, Grouping, Literal, Logical, Set, SuperExpr, This, Unary,
-        Variable,
+        Assign, Binary, Call, Expr, Grouping, Literal, Logical, Set, Super, This, Unary, Variable,
     },
     lox_error::LoxError,
     stmt::{self, Block, Class, Expression, If, Print, Return, Stmt, Var, While},
@@ -785,7 +784,7 @@ impl Parser {
                 },
             )?;
 
-            return Ok(Expr::SuperExpr(SuperExpr {
+            return Ok(Expr::Super(Super {
                 uuid: Uuid::new_v4(),
                 keyword,
                 method,
