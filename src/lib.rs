@@ -1,6 +1,5 @@
 #![forbid(unsafe_code)]
 
-use std::error::Error;
 use std::fs;
 use std::io::{stdin, stdout, Write};
 use std::{env, process};
@@ -17,6 +16,7 @@ mod stmt;
 mod token;
 
 use interpreter::Interpreter;
+use lox_error::LoxError;
 use parser::Parser;
 use resolver::Resolver;
 
@@ -58,11 +58,26 @@ pub struct Lox {
 }
 
 impl Lox {
-    pub fn run_file(&mut self, config: Config) -> Result<(), Box<dyn Error>> {
-        let source = fs::read_to_string(config.filename)?;
-        self.run(&source);
+    fn handle_lox_error(&self, error: LoxError) {
+        eprintln!("{error}");
 
-        Ok(())
+        match error {
+            LoxError::Scanner(_) => process::exit(65), // C sysexits.h EX_DATAERR data format error
+            LoxError::Parser(_) => process::exit(65),  // C sysexits.h EX_DATAERR data format error
+            LoxError::Resolver(_) => process::exit(70), // C sysexits.h EX_SOFTWARE internal software error
+            LoxError::Runtime(_) => process::exit(70), // C sysexits.h EX_SOFTWARE internal software error
+        }
+    }
+
+    pub fn run_file(&mut self, config: Config) {
+        let source = fs::read_to_string(config.filename).unwrap_or_else(|err| {
+            eprintln!("{err}");
+            process::exit(66); // C sysexits.h EX_NOINPUT error
+        });
+
+        if let Err(e) = self.run(&source) {
+            self.handle_lox_error(e);
+        }
     }
 
     pub fn run_prompt(&mut self) {
@@ -72,38 +87,24 @@ impl Lox {
             let mut line = String::new();
             let _ = stdin().read_line(&mut line);
 
-            self.run(line.trim());
+            if let Err(e) = self.run(line.trim()) {
+                self.handle_lox_error(e);
+            }
         }
     }
 
-    fn run(&mut self, source: &str) {
+    fn run(&mut self, source: &str) -> Result<(), LoxError> {
         let mut scanner = Scanner::new(source);
-        match scanner.scan_tokens() {
-            Err(err) => eprintln!("{err}"),
-            Ok(tokens) => {
-                let mut parser = Parser::new(tokens);
-                match parser.parse() {
-                    Ok(statements) => {
-                        let mut resolver = Resolver::new(&mut self.interpreter);
-                        if let Err(err) = resolver.resolve(&statements) {
-                            eprintln!("{err}");
-                            process::exit(70); // C sysexits.h EX_SOFTWARE internal software error
-                        }
+        let tokens = scanner.scan_tokens()?;
 
-                        match self.interpreter.interpret(&statements) {
-                            Ok(_) => (),
-                            Err(err) => {
-                                eprintln!("{err}");
-                                process::exit(70); // C sysexits.h EX_SOFTWARE internal software error
-                            }
-                        }
-                    }
-                    Err(err) => {
-                        eprintln!("{err}");
-                        process::exit(65); // C sysexits.h EX_DATAERR data format error
-                    }
-                }
-            }
-        };
+        let mut parser = Parser::new(tokens);
+        let statements = parser.parse()?;
+
+        let mut resolver = Resolver::new(&mut self.interpreter);
+        resolver.resolve(&statements)?;
+
+        self.interpreter.interpret(&statements)?;
+
+        Ok(())
     }
 }

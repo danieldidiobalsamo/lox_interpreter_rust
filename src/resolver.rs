@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::{
     expr::{AstVisitor, Expr},
     interpreter::Interpreter,
+    lox_error::LoxError,
     stmt::{Stmt, StmtVisitor},
     token::{LiteralType, Token},
 };
@@ -63,9 +64,9 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub fn resolve(&mut self, statements: &[Stmt]) -> Result<(), ResolverError> {
+    pub fn resolve(&mut self, statements: &[Stmt]) -> Result<(), LoxError> {
         for statement in statements {
-            self.resolve_stmt(statement)?;
+            self.resolve_stmt(statement).map_err(LoxError::Resolver)?;
         }
 
         Ok(())
@@ -233,10 +234,10 @@ impl AstVisitor<Result<(), ResolverError>> for Resolver<'_> {
         Ok(())
     }
 
-    fn visit_super_expr(&mut self, expr: &crate::expr::SuperExpr) -> Result<(), ResolverError> {
+    fn visit_super_expr(&mut self, expr: &crate::expr::Super) -> Result<(), ResolverError> {
         match self.current_class {
             ClassType::Subclass => {
-                self.resolve_local(&Expr::SuperExpr(expr.clone()), &expr.keyword);
+                self.resolve_local(&Expr::Super(expr.clone()), &expr.keyword);
                 Ok(())
             }
             ClassType::None => Err(ResolverError::SuperOutsideClass {
