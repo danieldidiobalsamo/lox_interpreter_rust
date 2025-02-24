@@ -641,10 +641,7 @@ mod tests {
             let statements = self.get_statements(code)?;
 
             let mut resolver = Resolver::new(&mut i);
-            resolver
-                .resolve(&statements)
-                .map_err(|e| LoxError::Resolver(e))?;
-
+            resolver.resolve(&statements)?;
             i.interpret(&statements)?;
 
             Ok(name)

@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::{
     expr::{AstVisitor, Expr},
     interpreter::Interpreter,
+    lox_error::LoxError,
     stmt::{Stmt, StmtVisitor},
     token::{LiteralType, Token},
 };
@@ -63,9 +64,10 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub fn resolve(&mut self, statements: &[Stmt]) -> Result<(), ResolverError> {
+    pub fn resolve(&mut self, statements: &[Stmt]) -> Result<(), LoxError> {
         for statement in statements {
-            self.resolve_stmt(statement)?;
+            self.resolve_stmt(statement)
+                .map_err(|e| LoxError::Resolver(e))?;
         }
 
         Ok(())
