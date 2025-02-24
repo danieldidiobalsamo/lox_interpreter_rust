@@ -77,7 +77,7 @@ pub struct Var {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Block {
-    pub statements: Vec<Box<Stmt>>,
+    pub statements: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -97,7 +97,7 @@ pub struct While {
 pub struct Function {
     pub name: Token,
     pub params: Vec<Token>,
-    pub body: Vec<Box<Stmt>>,
+    pub body: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -109,6 +109,6 @@ pub struct Return {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Class {
     pub name: Token,
-    pub methods: Vec<Box<Stmt>>,
+    pub methods: Vec<Stmt>,
     pub super_class: Box<Option<Expr>>,
 }

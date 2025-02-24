@@ -71,7 +71,7 @@ impl<'a> Resolver<'a> {
         Ok(())
     }
 
-    fn resolve_box_stmt(&mut self, statements: &[Box<Stmt>]) -> Result<(), ResolverError> {
+    fn resolve_box_stmt(&mut self, statements: &Vec<Stmt>) -> Result<(), ResolverError> {
         for statement in statements {
             self.resolve_stmt(statement)?;
         }
@@ -357,7 +357,7 @@ impl StmtVisitor<Result<(), ResolverError>> for Resolver<'_> {
             .insert("this".to_owned(), true);
 
         for method in &stmt.methods {
-            if let Stmt::Function(ref m) = **method {
+            if let Stmt::Function(m) = &method {
                 let declaration = if m.name.get_lexeme() == "init" {
                     FunctionType::Initializer
                 } else {

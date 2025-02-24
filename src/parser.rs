@@ -129,7 +129,7 @@ impl Parser {
         let mut methods = Vec::new();
 
         while !self.check(&TokenType::RightBrace) && !self.is_at_end() {
-            methods.push(Box::new(self.function()?));
+            methods.push(self.function()?);
         }
 
         let _ = self.consume(
@@ -361,10 +361,10 @@ impl Parser {
         if let Some(inc) = increment {
             body = Stmt::Block(Block {
                 statements: vec![
-                    Box::new(body),
-                    Box::new(Stmt::Expression(Expression {
+                    body,
+                    Stmt::Expression(Expression {
                         expression: Box::new(inc),
-                    })),
+                    }),
                 ],
             })
         }
@@ -383,7 +383,7 @@ impl Parser {
 
         if let Some(init) = initializer {
             body = Stmt::Block(Block {
-                statements: vec![Box::new(init), Box::new(body)],
+                statements: vec![init, body],
             })
         }
 
@@ -455,11 +455,11 @@ impl Parser {
         }))
     }
 
-    fn block(&mut self) -> Result<Vec<Box<Stmt>>, ParserError> {
+    fn block(&mut self) -> Result<Vec<Stmt>, ParserError> {
         let mut statements = Vec::new();
 
         while !self.check(&TokenType::RightBrace) && !self.is_at_end() {
-            statements.push(Box::new(self.declaration()?));
+            statements.push(self.declaration()?);
         }
 
         self.consume(
@@ -709,7 +709,7 @@ impl Parser {
                     });
                 }
 
-                arguments.push(Box::new(self.expression()?));
+                arguments.push(self.expression()?);
 
                 if !self.match_token_type(&[TokenType::Comma]) {
                     break;
