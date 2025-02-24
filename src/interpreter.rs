@@ -104,11 +104,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn execute_block(
-        &mut self,
-        statements: &[Box<Stmt>],
-        env: Environment,
-    ) -> Result<(), Exit> {
+    pub fn execute_block(&mut self, statements: &Vec<Stmt>, env: Environment) -> Result<(), Exit> {
         let previous = Rc::clone(&self.env);
 
         self.env = Rc::new(RefCell::new(env.clone()));
@@ -561,7 +557,7 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
         let mut methods = HashMap::new();
 
         for method in &stmt.methods {
-            if let Stmt::Function(ref m) = **method {
+            if let Stmt::Function(m) = &method {
                 let function = Function {
                     declaration: Box::new(m.clone()),
                     closure: Rc::clone(&self.env),

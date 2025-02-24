@@ -154,7 +154,7 @@ pub struct Call {
     pub uuid: Uuid,
     pub callee: Box<Expr>,
     pub paren: Token,
-    pub arguments: Vec<Box<Expr>>,
+    pub arguments: Vec<Expr>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
