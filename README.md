@@ -4,7 +4,7 @@ This project is a Rust implementation of both C bytecode virtual machine and Jav
 
 Unsafe code is forbidden in both crates.
 
-# How to launch the bytecode virtual machine interpreter
+# How to launch the bytecode virtual machine interpreter (in progress, not fully implemented)
 
 Make sure [Rust](https://www.rust-lang.org/tools/install) is installed.
 
