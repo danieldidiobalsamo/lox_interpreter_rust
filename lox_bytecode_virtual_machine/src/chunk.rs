@@ -40,6 +40,10 @@ impl Chunk {
         self.constants.push(value);
         (self.constants.len() - 1) as u8
     }
+
+    pub fn get_instruction(&self, i: usize) -> Option<&OpCode> {
+        self.code.get(i)
+    }
 }
 
 impl Display for Chunk {
