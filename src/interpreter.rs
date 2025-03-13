@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::rc::Rc;
+
+#[cfg(test)]
+use std::{fs::OpenOptions, io::Write};
 
 use thiserror::Error;
 
@@ -71,7 +72,7 @@ pub struct Interpreter {
     pub env: Rc<RefCell<Environment>>,
     pub globals: Rc<RefCell<Environment>>,
     locals: HashMap<Expr, usize>,
-    pub write_log: bool,
+    #[cfg(test)]
     log_file: String,
 }
 
@@ -87,8 +88,8 @@ impl Default for Interpreter {
             globals: Rc::clone(&globals),
             locals: HashMap::new(),
             env: Rc::clone(&globals),
-            write_log: false,
-            log_file: "unit_tests.log".to_owned(),
+            #[cfg(test)]
+            log_file: "".to_owned(),
         }
     }
 }
@@ -449,7 +450,8 @@ impl StmtVisitor<Result<(), Exit>> for Interpreter {
 
         println!("{}", value);
 
-        if self.write_log {
+        #[cfg(test)]
+        {
             let mut file = OpenOptions::new()
                 .append(true)
                 .open(&self.log_file)
@@ -631,7 +633,6 @@ mod tests {
 
             let name = format!("{}/unit_tests_{}.log", dir, self.id());
             let mut i = Interpreter {
-                write_log: true,
                 log_file: name.clone(),
                 ..Default::default()
             };
