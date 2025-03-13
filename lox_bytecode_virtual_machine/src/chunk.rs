@@ -4,6 +4,11 @@ use std::fmt::{Display, Formatter};
 pub enum OpCode {
     OpReturn,
     OpConstant(u8),
+    OpNegate,
+    OpAdd,
+    OpSubtract,
+    OpMultiply,
+    OpDivide,
 }
 
 impl Display for OpCode {
@@ -11,6 +16,11 @@ impl Display for OpCode {
         match self {
             OpCode::OpReturn => write!(f, "OP_RETURN"),
             OpCode::OpConstant(_) => write!(f, "OP_CONSTANT"),
+            OpCode::OpNegate => write!(f, "OP_NEGATE"),
+            OpCode::OpAdd => write!(f, "OP_ADD"),
+            OpCode::OpSubtract => write!(f, "OP_SUBTRACT"),
+            OpCode::OpMultiply => write!(f, "OP_MULTIPLY"),
+            OpCode::OpDivide => write!(f, "OP_DIVIDE"),
         }
     }
 }
@@ -39,6 +49,10 @@ impl Chunk {
     pub fn add_constant(&mut self, value: Value) -> u8 {
         self.constants.push(value);
         (self.constants.len() - 1) as u8
+    }
+
+    pub fn read_constant(&self, index: u8) -> Option<&Value> {
+        self.constants.get(index as usize)
     }
 
     pub fn get_instruction(&self, i: usize) -> Option<&OpCode> {
@@ -72,12 +86,14 @@ impl Display for Chunk {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Number(f64),
+    Nil,
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Number(n) => write!(f, "{n}"),
+            Value::Nil => write!(f, "Nil"),
         }
     }
 }
