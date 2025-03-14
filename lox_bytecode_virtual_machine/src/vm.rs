@@ -33,7 +33,7 @@ impl Vm {
             let instruction = match self.chunk.get_instruction(self.ip) {
                 Some(instruction) => instruction,
                 None => {
-                    break Err(LoxError::Compiler(CompilerError::IpOutOfBounds {
+                    break Err(LoxError::Runtime(RuntimeError::IpOutOfBounds {
                         ip: self.ip,
                     }))
                 }

@@ -9,13 +9,12 @@ pub enum LoxError {
 }
 
 #[derive(Debug, Clone, PartialEq, Error)]
-pub enum CompilerError {
-    #[error("Instructor pointer out of chunk bounds: {ip}")]
-    IpOutOfBounds { ip: usize },
-}
+pub enum CompilerError {}
 
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum RuntimeError {
+    #[error("Instructor pointer out of chunk bounds: {ip}")]
+    IpOutOfBounds { ip: usize },
     #[error("Can't divide by zero")]
     ZeroDivision,
     #[error("Undefined constant index {index}")]
