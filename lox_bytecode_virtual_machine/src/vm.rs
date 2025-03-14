@@ -1,4 +1,7 @@
-use crate::chunk::{Chunk, OpCode, Value};
+use crate::{
+    chunk::{Chunk, OpCode, Value},
+    lox_error::{CompilerError, LoxError, RuntimeError},
+};
 
 #[cfg(test)]
 use std::{fs::OpenOptions, io::Write};
@@ -12,14 +15,6 @@ pub struct Vm {
     log_file: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum InterpreterResult {
-    #[default]
-    Ok,
-    CompileError,
-    RuntimeError,
-}
-
 impl Vm {
     pub fn new(chunk: &Chunk) -> Self {
         Self {
@@ -30,14 +25,18 @@ impl Vm {
             log_file: "".to_owned(),
         }
     }
-    pub fn run(&mut self) -> InterpreterResult {
+    pub fn run(&mut self) -> Result<(), LoxError> {
         #[cfg(any(feature = "debug_trace", test))]
         println!("[STACK] INSTRUCTION");
 
         loop {
             let instruction = match self.chunk.get_instruction(self.ip) {
                 Some(instruction) => instruction,
-                None => break InterpreterResult::CompileError,
+                None => {
+                    break Err(LoxError::Compiler(CompilerError::IpOutOfBounds {
+                        ip: self.ip,
+                    }))
+                }
             };
 
             self.ip += 1;
@@ -71,16 +70,20 @@ impl Vm {
                         file.write_all((val.to_string() + "\n").as_bytes()).unwrap();
                     }
 
-                    return InterpreterResult::Ok;
+                    return Ok(());
                 }
                 OpCode::OpConstant(c) => match self.chunk.read_constant(*c) {
                     Some(val) => self.stack.push(val.clone()),
-                    None => return InterpreterResult::RuntimeError,
+                    None => {
+                        return Err(LoxError::Runtime(RuntimeError::UndefinedConstant {
+                            index: *c,
+                        }))
+                    }
                 },
 
                 OpCode::OpNegate => match self.pop() {
                     Some(Value::Number(val)) => self.push(Value::Number(-val)),
-                    _ => return InterpreterResult::RuntimeError,
+                    _ => return Err(LoxError::Runtime(RuntimeError::EmptyStack)),
                 },
                 OpCode::OpAdd => {
                     if let (Some(Value::Number(b)), Some(Value::Number(a))) =
@@ -88,7 +91,7 @@ impl Vm {
                     {
                         self.stack.push(Value::Number(a + b));
                     } else {
-                        return InterpreterResult::RuntimeError;
+                        return Err(LoxError::Runtime(RuntimeError::EmptyStack));
                     }
                 }
                 OpCode::OpSubtract => {
@@ -97,7 +100,7 @@ impl Vm {
                     {
                         self.stack.push(Value::Number(a - b));
                     } else {
-                        return InterpreterResult::RuntimeError;
+                        return Err(LoxError::Runtime(RuntimeError::EmptyStack));
                     }
                 }
                 OpCode::OpMultiply => {
@@ -106,7 +109,7 @@ impl Vm {
                     {
                         self.stack.push(Value::Number(a * b));
                     } else {
-                        return InterpreterResult::RuntimeError;
+                        return Err(LoxError::Runtime(RuntimeError::EmptyStack));
                     }
                 }
                 OpCode::OpDivide => {
@@ -114,12 +117,12 @@ impl Vm {
                         (self.pop(), self.pop())
                     {
                         if b == 0. {
-                            return InterpreterResult::RuntimeError;
+                            return Err(LoxError::Runtime(RuntimeError::ZeroDivision));
                         } else {
                             self.stack.push(Value::Number(a / b));
                         }
                     } else {
-                        return InterpreterResult::RuntimeError;
+                        return Err(LoxError::Runtime(RuntimeError::EmptyStack));
                     }
                 }
             }
@@ -176,6 +179,16 @@ mod tests {
 
             name
         }
+
+        fn interpret_code(&mut self, vm: &mut Vm) -> Result<String, LoxError> {
+            // TODO: take string as argument instead of vm when the interpreter will be able to read code
+
+            let file_name = self.create_logs_folder();
+            vm.set_log_file(&file_name);
+            vm.run()?;
+
+            Ok(file_name)
+        }
     }
 
     fn check_results(log_filename: &str, expected: &[&str]) {
@@ -202,16 +215,14 @@ mod tests {
     fn negate() {
         let setup = Setup::new();
 
-        let file_name = setup.lock().unwrap().create_logs_folder();
-
         let mut vm = Vm::default();
-        vm.set_log_file(&file_name);
+
         let index = vm.chunk.add_constant(Value::Number(1.2));
         vm.chunk.write(OpCode::OpConstant(index), 0);
         vm.chunk.write(OpCode::OpNegate, 0);
         vm.chunk.write(OpCode::OpReturn, 0);
 
-        vm.run();
+        let file_name = setup.lock().unwrap().interpret_code(&mut vm).unwrap();
         check_results(&file_name, &vec!["-1.2"]);
     }
 
@@ -219,10 +230,7 @@ mod tests {
     fn add() {
         let setup = Setup::new();
 
-        let file_name = setup.lock().unwrap().create_logs_folder();
-
         let mut vm = Vm::default();
-        vm.set_log_file(&file_name);
 
         let mut index = vm.chunk.add_constant(Value::Number(2.));
         vm.chunk.write(OpCode::OpConstant(index), 0);
@@ -233,7 +241,7 @@ mod tests {
         vm.chunk.write(OpCode::OpAdd, 0);
         vm.chunk.write(OpCode::OpReturn, 0);
 
-        vm.run();
+        let file_name = setup.lock().unwrap().interpret_code(&mut vm).unwrap();
         check_results(&file_name, &vec!["5"]);
     }
 
@@ -241,10 +249,7 @@ mod tests {
     fn subtract() {
         let setup = Setup::new();
 
-        let file_name = setup.lock().unwrap().create_logs_folder();
-
         let mut vm = Vm::default();
-        vm.set_log_file(&file_name);
 
         let mut index = vm.chunk.add_constant(Value::Number(2.));
         vm.chunk.write(OpCode::OpConstant(index), 0);
@@ -255,7 +260,7 @@ mod tests {
         vm.chunk.write(OpCode::OpSubtract, 0);
         vm.chunk.write(OpCode::OpReturn, 0);
 
-        vm.run();
+        let file_name = setup.lock().unwrap().interpret_code(&mut vm).unwrap();
         check_results(&file_name, &vec!["-1"]);
     }
 
@@ -263,10 +268,7 @@ mod tests {
     fn multiply() {
         let setup = Setup::new();
 
-        let file_name = setup.lock().unwrap().create_logs_folder();
-
         let mut vm = Vm::default();
-        vm.set_log_file(&file_name);
 
         let mut index = vm.chunk.add_constant(Value::Number(2.));
         vm.chunk.write(OpCode::OpConstant(index), 0);
@@ -277,7 +279,7 @@ mod tests {
         vm.chunk.write(OpCode::OpMultiply, 0);
         vm.chunk.write(OpCode::OpReturn, 0);
 
-        vm.run();
+        let file_name = setup.lock().unwrap().interpret_code(&mut vm).unwrap();
         check_results(&file_name, &vec!["6"]);
     }
 
@@ -285,10 +287,7 @@ mod tests {
     fn divide() {
         let setup = Setup::new();
 
-        let file_name = setup.lock().unwrap().create_logs_folder();
-
         let mut vm = Vm::default();
-        vm.set_log_file(&file_name);
 
         let mut index = vm.chunk.add_constant(Value::Number(1.));
         vm.chunk.write(OpCode::OpConstant(index), 0);
@@ -299,7 +298,25 @@ mod tests {
         vm.chunk.write(OpCode::OpDivide, 0);
         vm.chunk.write(OpCode::OpReturn, 0);
 
-        vm.run();
+        let file_name = setup.lock().unwrap().interpret_code(&mut vm).unwrap();
         check_results(&file_name, &vec!["0.5"]);
+    }
+
+    #[test]
+    fn divide_zero() {
+        let setup = Setup::new();
+
+        let mut vm = Vm::default();
+
+        let mut index = vm.chunk.add_constant(Value::Number(1.));
+        vm.chunk.write(OpCode::OpConstant(index), 0);
+
+        index = vm.chunk.add_constant(Value::Number(0.));
+        vm.chunk.write(OpCode::OpConstant(index), 0);
+
+        vm.chunk.write(OpCode::OpDivide, 0);
+        vm.chunk.write(OpCode::OpReturn, 0);
+
+        assert!(setup.lock().unwrap().interpret_code(&mut vm).is_err());
     }
 }

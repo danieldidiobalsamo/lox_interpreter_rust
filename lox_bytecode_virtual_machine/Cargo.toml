@@ -7,3 +7,4 @@ edition = "2024"
 debug_trace=[]
 
 [dependencies]
+thiserror = "2"
