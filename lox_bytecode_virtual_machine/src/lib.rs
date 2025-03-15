@@ -8,7 +8,10 @@ use lox_error::LoxError;
 use vm::Vm;
 
 mod chunk;
+mod compiler;
 mod lox_error;
+mod scanner;
+mod token;
 mod vm;
 
 pub struct Config {
@@ -84,7 +87,7 @@ impl Lox {
         println!("run");
         println!("{source}");
 
-        self.vm.run()?;
+        self.vm.run(source)?;
 
         Ok(())
     }

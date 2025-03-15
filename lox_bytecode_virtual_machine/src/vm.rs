@@ -25,7 +25,7 @@ impl Vm {
             log_file: "".to_owned(),
         }
     }
-    pub fn run(&mut self) -> Result<(), LoxError> {
+    pub fn run(&mut self, code: &str) -> Result<(), LoxError> {
         #[cfg(any(feature = "debug_trace", test))]
         println!("[STACK] INSTRUCTION");
 
@@ -185,7 +185,7 @@ mod tests {
 
             let file_name = self.create_logs_folder();
             vm.set_log_file(&file_name);
-            vm.run()?;
+            vm.run("")?;
 
             Ok(file_name)
         }
