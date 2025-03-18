@@ -4,17 +4,17 @@ use std::fmt::Display;
 pub struct Token {
     token_type: TokenType,
     start: usize,
-    length: usize,
     line: usize,
+    lexeme: Option<String>,
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, start: usize, length: usize, line: usize) -> Token {
+    pub fn new(token_type: TokenType, start: usize, line: usize, lexeme: Option<String>) -> Token {
         Self {
             token_type,
             start,
-            length,
             line,
+            lexeme,
         }
     }
 
